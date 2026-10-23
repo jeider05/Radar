@@ -11,103 +11,41 @@ public sealed class GitHubMonitorOptions
 
     /// <summary>Time between normal monitoring cycles.</summary>
     public TimeSpan PollingInterval { get; set; } = TimeSpan.FromMinutes(60);
+
+    /// <summary>
+    /// How often the local database is checked for sources added or resumed since they were last checked.
+    /// Only those sources are requested from GitHub; this check itself makes no network requests.
+    /// </summary>
+    public TimeSpan NewSourceCheckInterval { get; set; } = TimeSpan.FromMinutes(1);
 }
 
-/// <summary>
-/// Periodically imports new releases for every active GitHub source, one source at a time.
-/// Stops the cycle and waits for the reset when GitHub reports a rate limit.
-/// </summary>
+/// <summary>Imports new releases of active GitHub sources. Pauses until the reset when GitHub reports a rate limit.</summary>
 public sealed class GitHubReleaseMonitor(
     GitHubReleaseImporter importer,
     SourceStore sources,
     IOptions<GitHubMonitorOptions> options,
-    ILogger<GitHubReleaseMonitor> logger) : BackgroundService
+    ILogger<GitHubReleaseMonitor> logger)
+    : SourceMonitor(sources, logger, GitHubMonitorOptions.SectionName, options.Value.PollingInterval, options.Value.NewSourceCheckInterval)
 {
-    // Lower bound for waiting after a rate limit, in case the reported reset time is already past.
-    private static readonly TimeSpan MinimumRateLimitWait = TimeSpan.FromMinutes(1);
+    protected override SourceType SourceType => SourceType.GitHub;
 
-    private readonly TimeSpan _pollingInterval = options.Value.PollingInterval > TimeSpan.Zero
-        ? options.Value.PollingInterval
-        : throw new ArgumentOutOfRangeException(nameof(options), "GitHubMonitor:PollingInterval must be positive.");
-
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    protected override async Task CheckSourceAsync(Source source, CancellationToken cancellationToken)
     {
-        logger.LogInformation("GitHub monitor started. Polling interval: {Interval}.", _pollingInterval);
-
-        while (!stoppingToken.IsCancellationRequested)
+        if (!GitHubRepository.TryParse(source.ExternalId, out var repository, out _))
         {
-            TimeSpan wait;
-            try
-            {
-                wait = await RunCycleAsync(stoppingToken);
-            }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-            {
-                break;
-            }
-            catch (Exception ex)
-            {
-                // For example, the database is unavailable. Try again on the next normal cycle.
-                logger.LogError(ex, "GitHub monitoring cycle failed.");
-                wait = _pollingInterval;
-            }
-
-            try
-            {
-                await Task.Delay(wait, stoppingToken);
-            }
-            catch (OperationCanceledException)
-            {
-                break;
-            }
+            logger.LogWarning("Skipping GitHub source {SourceId}: '{ExternalId}' is not owner/repository.", source.Id, source.ExternalId);
+            return;
         }
 
-        logger.LogInformation("GitHub monitor stopped.");
-    }
-
-    /// <summary>Processes all active GitHub sources once and returns how long to wait before the next cycle.</summary>
-    public async Task<TimeSpan> RunCycleAsync(CancellationToken cancellationToken)
-    {
-        var activeSources = sources.GetActive(SourceType.GitHub);
-        if (activeSources.Count == 0)
+        try
         {
-            logger.LogDebug("No active GitHub sources.");
-            return _pollingInterval;
+            var result = await importer.ImportAsync(repository.Owner, repository.Name, cancellationToken);
+            logger.LogInformation(
+                "{Repository}: {Found} releases found, {Added} new.", source.ExternalId, result.ReleasesFound, result.ReleasesAdded);
         }
-
-        foreach (var source in activeSources)
+        catch (GitHubApiException ex) when (ex.IsRateLimited)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            if (source.ExternalId.Split('/') is not [var owner, var repository])
-            {
-                logger.LogWarning("Skipping GitHub source {SourceId}: '{ExternalId}' is not owner/repository.", source.Id, source.ExternalId);
-                continue;
-            }
-
-            try
-            {
-                var result = await importer.ImportAsync(owner, repository, cancellationToken);
-                logger.LogInformation(
-                    "{Repository}: {Found} releases found, {Added} new.", source.ExternalId, result.ReleasesFound, result.ReleasesAdded);
-            }
-            catch (GitHubApiException ex) when (ex.IsRateLimited)
-            {
-                var untilReset = ex.RateLimitResetUtc!.Value - DateTime.UtcNow;
-                var wait = untilReset > MinimumRateLimitWait ? untilReset : MinimumRateLimitWait;
-                logger.LogWarning("GitHub rate limit reached while checking {Repository}. Pausing for {Wait}.", source.ExternalId, wait);
-                return wait;
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                logger.LogError(ex, "Could not check GitHub source {Repository}.", source.ExternalId);
-            }
+            throw new SourceRateLimitedException(ex.RateLimitResetUtc!.Value);
         }
-
-        return _pollingInterval;
     }
 }

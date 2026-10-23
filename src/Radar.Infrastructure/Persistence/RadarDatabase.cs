@@ -43,6 +43,16 @@ public sealed class RadarDatabase
             UNIQUE (SourceId, ExternalId)
         );
         """,
+
+        // 3: ContentExplanations. One AI explanation per content item, kept separate from the detected content.
+        """
+        CREATE TABLE ContentExplanations (
+            ContentItemId INTEGER PRIMARY KEY REFERENCES ContentItems (Id),
+            Text          TEXT    NOT NULL,
+            Model         TEXT    NOT NULL,
+            CreatedAtUtc  TEXT    NOT NULL
+        );
+        """,
     ];
 
     private readonly string _connectionString;

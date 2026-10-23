@@ -1,5 +1,6 @@
 using Microsoft.Data.Sqlite;
 using Radar.Core.Sources;
+using Radar.Infrastructure.Contents;
 using Radar.Infrastructure.Persistence;
 using Radar.Infrastructure.Sources;
 
@@ -111,6 +112,60 @@ public sealed class SourceStoreTests : IDisposable
         var all = _store.GetAll();
 
         Assert.Equal(["example-org/active", "example-org/inactive", "UC_test_channel"], all.Select(s => s.ExternalId));
+    }
+
+    [Fact]
+    public void SetActive_pauses_and_resumes_a_source()
+    {
+        _database.Initialize();
+        var source = _store.TryAdd(SourceType.GitHub, "example-org/example-repo", "Example repo", "https://github.com/example-org/example-repo")!;
+
+        Assert.True(_store.SetActive(source.Id, false));
+        Assert.False(_store.Find(SourceType.GitHub, "example-org/example-repo")!.IsActive);
+        Assert.Empty(_store.GetActive(SourceType.GitHub));
+
+        Assert.True(_store.SetActive(source.Id, true));
+        Assert.True(_store.Find(SourceType.GitHub, "example-org/example-repo")!.IsActive);
+        Assert.Single(_store.GetActive(SourceType.GitHub));
+    }
+
+    [Fact]
+    public void SetActive_returns_false_when_source_does_not_exist()
+    {
+        _database.Initialize();
+
+        Assert.False(_store.SetActive(999, false));
+    }
+
+    [Fact]
+    public void TryDelete_removes_a_source_without_content()
+    {
+        _database.Initialize();
+        var source = _store.TryAdd(SourceType.GitHub, "example-org/example-repo", "Example repo", "https://github.com/example-org/example-repo")!;
+
+        Assert.Equal(SourceDeleteResult.Deleted, _store.TryDelete(source.Id));
+        Assert.Null(_store.Find(SourceType.GitHub, "example-org/example-repo"));
+    }
+
+    [Fact]
+    public void TryDelete_keeps_a_source_that_has_content_and_its_history()
+    {
+        _database.Initialize();
+        var source = _store.TryAdd(SourceType.GitHub, "example-org/example-repo", "Example repo", "https://github.com/example-org/example-repo")!;
+        var contentItems = new ContentItemStore(_database);
+        contentItems.TryAdd(source.Id, "release-1", "Release 1", "https://example.invalid/release-1");
+
+        Assert.Equal(SourceDeleteResult.HasContent, _store.TryDelete(source.Id));
+        Assert.NotNull(_store.Find(SourceType.GitHub, "example-org/example-repo"));
+        Assert.Single(contentItems.GetBySource(source.Id));
+    }
+
+    [Fact]
+    public void TryDelete_returns_NotFound_when_source_does_not_exist()
+    {
+        _database.Initialize();
+
+        Assert.Equal(SourceDeleteResult.NotFound, _store.TryDelete(999));
     }
 
     private long CountSources()

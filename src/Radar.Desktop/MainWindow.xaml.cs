@@ -19,6 +19,7 @@ public partial class MainWindow : Window
 {
     private static readonly TimeSpan AutoRefreshInterval = TimeSpan.FromSeconds(30);
 
+    private readonly RadarDatabase _database;
     private readonly SourceStore _sources;
     private readonly ContentItemStore _contentItems;
     private readonly DispatcherTimer _autoRefreshTimer;
@@ -28,6 +29,11 @@ public partial class MainWindow : Window
     private IReadOnlyList<ContentItem>? _loadedItems;
     private IReadOnlyList<ContentItemRow> _allRows = [];
 
+    private const int PageSize = 10;
+    private ContentPeriod _period = ContentPeriod.All;
+    private int _pageNumber = 1;
+    private long? _shownSourceId;
+
     private bool _isLoading;
     private bool _reloadPending;
     private bool _isClosed;
@@ -35,8 +41,9 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        UpdateThemeButton();
 
-        var database = RadarDatabase.CreateDefault();
+        var database = _database = RadarDatabase.CreateDefault();
         _sources = new SourceStore(database);
         _contentItems = new ContentItemStore(database);
 
@@ -140,14 +147,18 @@ public partial class MainWindow : Window
 
     private void Show(IReadOnlyList<Source> sources, IReadOnlyList<ContentItem> items)
     {
+        NotifyNewVideos(NewContentDetector.FindVideosToNotify(_loadedItems, items, sources));
+
         _loadedSources = sources;
         _loadedItems = items;
 
         var selectedSourceId = (SourcesList.SelectedItem as SourceFilter)?.SourceId;
 
-        var sourceNames = sources.ToDictionary(s => s.Id, s => s.Name);
+        var sourcesById = sources.ToDictionary(s => s.Id);
         _allRows = items
-            .Select(item => new ContentItemRow(item, sourceNames.GetValueOrDefault(item.SourceId, "Unknown source")))
+            .Select(item => sourcesById.TryGetValue(item.SourceId, out var source)
+                ? new ContentItemRow(item, source.Name, source.SourceType)
+                : new ContentItemRow(item, "Unknown source", SourceType.GitHub))
             .ToList();
 
         var filters = new List<SourceFilter> { SourceFilter.All(_allRows) };
@@ -157,20 +168,47 @@ public partial class MainWindow : Window
         SourcesList.SelectedItem = filters.FirstOrDefault(f => f.SourceId == selectedSourceId) ?? filters[0];
     }
 
-    private void ShowItems(SourceFilter filter)
+    /// <summary>Shows the current page of the selected source's items in the selected period.</summary>
+    private void NotifyNewVideos(IReadOnlyList<(ContentItem Item, Source Source)> videos)
     {
-        var rows = filter.SourceId is { } sourceId
-            ? _allRows.Where(r => r.Item.SourceId == sourceId).ToList()
-            : _allRows;
-
-        ItemsList.ItemsSource = rows;
-        ListTitle.Text = filter.Name;
-        var unread = rows.Count(r => !r.IsRead);
-        ListSummary.Text = $"{rows.Count} items · {unread} unread";
-        EmptyText.Visibility = rows.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        try
+        {
+            VideoNotifier.NotifyNewVideos(videos.Select(v => (v.Source.Name, v.Item.Title, v.Item.Url)).ToList());
+        }
+        catch (Exception ex)
+        {
+            // Notifications are a convenience: the videos are still listed as unread.
+            StatusText.Text = $"Could not show a notification: {ex.Message}";
+        }
     }
 
-    private void SourcesList_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    private void ShowItems(SourceFilter filter)
+    {
+        var nowUtc = DateTime.UtcNow;
+        var rows = _allRows
+            .Where(r => filter.SourceId is not { } sourceId || r.Item.SourceId == sourceId)
+            .Where(r => ContentListing.IsInPeriod(r.Item, _period, nowUtc, TimeZoneInfo.Local))
+            .ToList();
+
+        var page = ContentListing.GetPage(rows, _pageNumber, PageSize);
+        _pageNumber = page.PageNumber;
+
+        ItemsList.ItemsSource = page.Items;
+        ListTitle.Text = filter.Name;
+        ListSummary.Text = $"{rows.Count} items · {rows.Count(r => !r.IsRead)} unread";
+
+        EmptyText.Text = _period == ContentPeriod.All
+            ? "No content yet. The Worker adds new releases as it finds them."
+            : "No releases in this period.";
+        EmptyText.Visibility = rows.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+
+        Pager.Visibility = page.PageCount > 1 ? Visibility.Visible : Visibility.Collapsed;
+        PageText.Text = $"Page {page.PageNumber} of {page.PageCount}";
+        PreviousPageButton.IsEnabled = page.PageNumber > 1;
+        NextPageButton.IsEnabled = page.PageNumber < page.PageCount;
+    }
+
+    private void ShowCurrentItems()
     {
         if (SourcesList.SelectedItem is SourceFilter filter)
         {
@@ -178,7 +216,63 @@ public partial class MainWindow : Window
         }
     }
 
+    private void SourcesList_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (SourcesList.SelectedItem is not SourceFilter filter)
+        {
+            return;
+        }
+
+        // A different source starts at page 1; re-selecting the same source after a reload keeps the page.
+        if (filter.SourceId != _shownSourceId)
+        {
+            _shownSourceId = filter.SourceId;
+            _pageNumber = 1;
+        }
+
+        ShowItems(filter);
+    }
+
+    private void Period_Checked(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { Tag: string tag })
+        {
+            return;
+        }
+
+        _period = Enum.Parse<ContentPeriod>(tag);
+        _pageNumber = 1;
+        ShowCurrentItems();
+    }
+
+    private void PreviousPage_Click(object sender, RoutedEventArgs e)
+    {
+        _pageNumber--;
+        ShowCurrentItems();
+    }
+
+    private void NextPage_Click(object sender, RoutedEventArgs e)
+    {
+        _pageNumber++;
+        ShowCurrentItems();
+    }
+
     private async void Refresh_Click(object sender, RoutedEventArgs e) => await ReloadAsync();
+
+    private void Theme_Click(object sender, RoutedEventArgs e)
+    {
+        ThemeManager.Toggle();
+        UpdateThemeButton();
+    }
+
+    private void UpdateThemeButton() =>
+        ThemeButton.Content = ThemeManager.Current == AppTheme.Dark ? "Light mode" : "Dark mode";
+
+    private async void ManageSources_Click(object sender, RoutedEventArgs e)
+    {
+        new SourcesWindow(_database) { Owner = this }.ShowDialog();
+        await ReloadAsync();
+    }
 
     private async void MarkAsRead_Click(object sender, RoutedEventArgs e)
     {
@@ -198,6 +292,14 @@ public partial class MainWindow : Window
         }
 
         await ReloadAsync();
+    }
+
+    private void Details_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.DataContext is ContentItemRow row)
+        {
+            new ReleaseDetailsWindow(_contentItems, row.Item, row.SourceName, row.SourceType) { Owner = this }.ShowDialog();
+        }
     }
 
     private void Open_Click(object sender, RoutedEventArgs e)
@@ -225,7 +327,7 @@ public partial class MainWindow : Window
     }
 
     /// <summary>One content item as displayed in the list.</summary>
-    private sealed record ContentItemRow(ContentItem Item, string SourceName)
+    private sealed record ContentItemRow(ContentItem Item, string SourceName, SourceType SourceType)
     {
         public string Title => Item.Title;
 

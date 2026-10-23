@@ -13,11 +13,10 @@ public sealed class GitHubReleaseImporter(GitHubReleasesClient client, SourceSto
     {
         var releases = await client.GetReleasesAsync(owner, repository, cancellationToken);
 
-        // GitHub owner and repository names are case-insensitive.
-        var externalId = $"{owner}/{repository}".ToLowerInvariant();
-        var source = sources.Find(SourceType.GitHub, externalId)
-            ?? sources.TryAdd(SourceType.GitHub, externalId, $"{owner}/{repository}", $"https://github.com/{owner}/{repository}")
-            ?? throw new InvalidOperationException($"Could not register source '{externalId}'.");
+        var gitHubRepository = new GitHubRepository(owner, repository);
+        var source = sources.Find(SourceType.GitHub, gitHubRepository.ExternalId)
+            ?? sources.TryAdd(SourceType.GitHub, gitHubRepository.ExternalId, gitHubRepository.DisplayName, gitHubRepository.Url)
+            ?? throw new InvalidOperationException($"Could not register source '{gitHubRepository.ExternalId}'.");
 
         // GitHub returns newest first; insert oldest first so the newest release is the most recently detected item.
         var added = 0;

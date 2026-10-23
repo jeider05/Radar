@@ -41,6 +41,49 @@ public sealed class DatabaseMigrationTests : IDisposable
     }
 
     [Fact]
+    public void Initialize_upgrades_a_version_2_database_keeping_sources_contents_and_read_state()
+    {
+        // Schema exactly as created by migrations 1 and 2 (user_version 2), with data.
+        Directory.CreateDirectory(_directory);
+        Execute("""
+            CREATE TABLE Sources (
+                Id           INTEGER PRIMARY KEY,
+                SourceType   TEXT    NOT NULL,
+                ExternalId   TEXT    NOT NULL,
+                Name         TEXT    NOT NULL,
+                Url          TEXT    NOT NULL,
+                IsActive     INTEGER NOT NULL,
+                CreatedAtUtc TEXT    NOT NULL,
+                UNIQUE (SourceType, ExternalId)
+            );
+            CREATE TABLE ContentItems (
+                Id             INTEGER PRIMARY KEY,
+                SourceId       INTEGER NOT NULL REFERENCES Sources (Id),
+                ExternalId     TEXT    NOT NULL,
+                Title          TEXT    NOT NULL,
+                Url            TEXT    NOT NULL,
+                Description    TEXT    NULL,
+                PublishedAtUtc TEXT    NULL,
+                DetectedAtUtc  TEXT    NOT NULL,
+                IsRead         INTEGER NOT NULL DEFAULT 0,
+                UNIQUE (SourceId, ExternalId)
+            );
+            INSERT INTO Sources (Id, SourceType, ExternalId, Name, Url, IsActive, CreatedAtUtc)
+            VALUES (1, 'GitHub', 'example-org/example-repo', 'Example repo', 'https://github.com/example-org/example-repo', 0, '2026-01-01T00:00:00.0000000Z');
+            INSERT INTO ContentItems (SourceId, ExternalId, Title, Url, Description, PublishedAtUtc, DetectedAtUtc, IsRead)
+            VALUES (1, '111', 'v1', 'https://example.invalid/v1', 'Notes', NULL, '2026-01-02T00:00:00.0000000Z', 1);
+            PRAGMA user_version = 2;
+            """);
+
+        _database.Initialize();
+
+        Assert.Equal(1L, Scalar("SELECT COUNT(*) FROM Sources WHERE ExternalId = 'example-org/example-repo' AND IsActive = 0;"));
+        Assert.Equal(1L, Scalar("SELECT COUNT(*) FROM ContentItems WHERE ExternalId = '111' AND IsRead = 1 AND Description = 'Notes';"));
+        Assert.Equal(1L, Scalar("SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'ContentExplanations';"));
+        Assert.Equal(RadarDatabase.SchemaVersion, Scalar("PRAGMA user_version;"));
+    }
+
+    [Fact]
     public void Initialize_on_a_new_database_reaches_the_current_schema_version()
     {
         _database.Initialize();

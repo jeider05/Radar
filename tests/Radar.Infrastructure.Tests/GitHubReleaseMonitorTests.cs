@@ -145,11 +145,146 @@ public sealed class GitHubReleaseMonitorTests : IDisposable
             () => CreateMonitor(new FakeHttpMessageHandler(HttpStatusCode.OK), TimeSpan.Zero));
     }
 
-    private GitHubReleaseMonitor CreateMonitor(FakeHttpMessageHandler handler, TimeSpan? interval = null)
+    [Fact]
+    public void Non_positive_new_source_check_interval_is_rejected()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => CreateMonitor(new FakeHttpMessageHandler(HttpStatusCode.OK), newSourceCheckInterval: TimeSpan.Zero));
+    }
+
+    [Fact]
+    public async Task Cycle_skips_a_source_with_an_invalid_external_id_and_processes_the_others()
+    {
+        AddGitHubSource("not-a-repository");
+        var valid = AddGitHubSource("example-org/example-repo");
+        var handler = new FakeHttpMessageHandler(HttpStatusCode.OK, ReleasesJson(1));
+
+        await CreateMonitor(handler).RunCycleAsync(CancellationToken.None);
+
+        var request = Assert.Single(handler.Requests);
+        Assert.Contains("/repos/example-org/example-repo/releases", request.RequestUri!.AbsolutePath);
+        Assert.Single(_contentItems.GetBySource(valid.Id));
+    }
+
+    [Fact]
+    public async Task New_source_check_imports_only_sources_added_after_the_last_cycle()
+    {
+        AddGitHubSource("example-org/existing-repo");
+        var handler = new FakeHttpMessageHandler(HttpStatusCode.OK, ReleasesJson(1));
+        var monitor = CreateMonitor(handler);
+        await monitor.RunCycleAsync(CancellationToken.None);
+
+        var added = AddGitHubSource("example-org/added-repo");
+        await monitor.CheckNewSourcesAsync(CancellationToken.None);
+        await monitor.CheckNewSourcesAsync(CancellationToken.None);
+
+        Assert.Equal(2, handler.Requests.Count);
+        Assert.Contains("/repos/example-org/added-repo/releases", handler.Requests[1].RequestUri!.AbsolutePath);
+        Assert.Single(_contentItems.GetBySource(added.Id));
+    }
+
+    [Fact]
+    public async Task New_source_check_imports_a_source_resumed_after_the_last_cycle()
+    {
+        var paused = AddGitHubSource("example-org/paused-repo", isActive: false);
+        var handler = new FakeHttpMessageHandler(HttpStatusCode.OK, ReleasesJson(1));
+        var monitor = CreateMonitor(handler);
+        await monitor.RunCycleAsync(CancellationToken.None);
+
+        _sources.SetActive(paused.Id, true);
+        await monitor.CheckNewSourcesAsync(CancellationToken.None);
+
+        Assert.Single(handler.Requests);
+        Assert.Single(_contentItems.GetBySource(paused.Id));
+    }
+
+    [Fact]
+    public async Task New_source_check_imports_again_a_checked_source_that_was_paused_and_resumed()
+    {
+        var source = AddGitHubSource("example-org/example-repo");
+        var handler = new FakeHttpMessageHandler(HttpStatusCode.OK, ReleasesJson(1));
+        var monitor = CreateMonitor(handler);
+        await monitor.RunCycleAsync(CancellationToken.None);
+
+        _sources.SetActive(source.Id, false);
+        await monitor.CheckNewSourcesAsync(CancellationToken.None);
+        _sources.SetActive(source.Id, true);
+        await monitor.CheckNewSourcesAsync(CancellationToken.None);
+
+        Assert.Equal(2, handler.Requests.Count);
+    }
+
+    [Fact]
+    public async Task New_source_check_does_not_retry_a_new_source_that_failed()
+    {
+        AddGitHubSource("example-org/missing-repo");
+        var handler = new FakeHttpMessageHandler(HttpStatusCode.NotFound, "{}");
+        var monitor = CreateMonitor(handler);
+
+        await monitor.CheckNewSourcesAsync(CancellationToken.None);
+        await monitor.CheckNewSourcesAsync(CancellationToken.None);
+
+        Assert.Single(handler.Requests); // retried only on the next normal cycle
+        Assert.NotNull(_sources.Find(SourceType.GitHub, "example-org/missing-repo")); // the saved source is kept
+    }
+
+    [Fact]
+    public async Task New_source_check_makes_no_requests_when_nothing_is_new()
+    {
+        AddGitHubSource("example-org/example-repo");
+        var handler = new FakeHttpMessageHandler(HttpStatusCode.OK, ReleasesJson(1));
+        var monitor = CreateMonitor(handler);
+        await monitor.RunCycleAsync(CancellationToken.None);
+
+        var wait = await monitor.CheckNewSourcesAsync(CancellationToken.None);
+
+        Assert.Null(wait);
+        Assert.Single(handler.Requests);
+    }
+
+    [Fact]
+    public async Task Running_monitor_checks_a_newly_added_source_without_waiting_for_the_next_cycle()
+    {
+        AddGitHubSource("example-org/existing-repo");
+        var handler = new FakeHttpMessageHandler(HttpStatusCode.OK, ReleasesJson(1));
+        var monitor = CreateMonitor(handler, newSourceCheckInterval: TimeSpan.FromMilliseconds(50));
+
+        await monitor.StartAsync(CancellationToken.None);
+        await WaitUntil(() => handler.Requests.Count == 1);
+        var added = AddGitHubSource("example-org/added-repo");
+        await WaitUntil(() => handler.Requests.Count == 2);
+        await monitor.StopAsync(CancellationToken.None);
+
+        Assert.Single(_contentItems.GetBySource(added.Id));
+    }
+
+    [Fact]
+    public async Task Running_monitor_does_not_check_new_sources_while_rate_limited()
+    {
+        AddGitHubSource("example-org/example-repo");
+        var handler = RateLimitedHandler(DateTimeOffset.UtcNow.AddMinutes(30));
+        var monitor = CreateMonitor(handler, newSourceCheckInterval: TimeSpan.FromMilliseconds(20));
+
+        await monitor.StartAsync(CancellationToken.None);
+        await WaitUntil(() => handler.Requests.Count == 1);
+        AddGitHubSource("example-org/added-repo");
+        await Task.Delay(TimeSpan.FromSeconds(1));
+        await monitor.StopAsync(CancellationToken.None);
+
+        Assert.Single(handler.Requests);
+    }
+
+    private GitHubReleaseMonitor CreateMonitor(
+        FakeHttpMessageHandler handler, TimeSpan? interval = null, TimeSpan? newSourceCheckInterval = null)
     {
         var importer = new GitHubReleaseImporter(new GitHubReleasesClient(new HttpClient(handler)), _sources, _contentItems);
-        var options = Options.Create(new GitHubMonitorOptions { PollingInterval = interval ?? Interval });
-        return new GitHubReleaseMonitor(importer, _sources, options, NullLogger<GitHubReleaseMonitor>.Instance);
+        var options = new GitHubMonitorOptions { PollingInterval = interval ?? Interval };
+        if (newSourceCheckInterval is { } check)
+        {
+            options.NewSourceCheckInterval = check;
+        }
+
+        return new GitHubReleaseMonitor(importer, _sources, Options.Create(options), NullLogger<GitHubReleaseMonitor>.Instance);
     }
 
     private Source AddGitHubSource(string externalId, bool isActive = true) =>

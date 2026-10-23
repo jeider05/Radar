@@ -20,6 +20,9 @@ internal sealed class FakeHttpMessageHandler : HttpMessageHandler
 
     public List<HttpRequestMessage> Requests { get; } = [];
 
+    /// <summary>Request bodies captured at send time; callers may dispose the request afterwards.</summary>
+    public List<string?> RequestBodies { get; } = [];
+
     public static HttpResponseMessage Response(HttpStatusCode statusCode, string body = "[]", Action<HttpResponseMessage>? configure = null)
     {
         var response = new HttpResponseMessage(statusCode)
@@ -30,13 +33,15 @@ internal sealed class FakeHttpMessageHandler : HttpMessageHandler
         return response;
     }
 
-    protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+    protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
+        var body = request.Content is null ? null : await request.Content.ReadAsStringAsync(cancellationToken);
         lock (Requests)
         {
             Requests.Add(request);
+            RequestBodies.Add(body);
         }
 
-        return Task.FromResult(_respond(request));
+        return _respond(request);
     }
 }

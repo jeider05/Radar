@@ -1,0 +1,45 @@
+<Window x:Class="Radar.Desktop.ReleaseDetailsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Release details" Height="720" Width="820" MinHeight="420" MinWidth="560"
+        Background="{DynamicResource PageBrush}" FontFamily="Segoe UI" FontSize="13"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False">
+    <Grid Margin="20,16,20,20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <StackPanel Grid.Row="0" Margin="0,0,0,12">
+            <TextBlock x:Name="TitleText" FontSize="18" FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}"
+                       TextTrimming="CharacterEllipsis" />
+            <TextBlock x:Name="SubtitleText" Margin="0,2,0,0" Foreground="{DynamicResource MutedTextBrush}" />
+        </StackPanel>
+
+        <!-- Original release notes -->
+        <DockPanel Grid.Row="1">
+            <TextBlock x:Name="NotesLabel" DockPanel.Dock="Top" Text="Release notes" FontWeight="SemiBold" Margin="0,0,0,6"
+                       Foreground="{DynamicResource TextBrush}" />
+            <TextBox x:Name="NotesText" IsReadOnly="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"
+                     FontFamily="Cascadia Mono, Consolas" FontSize="12" Padding="10,8"
+                     Background="{DynamicResource SurfaceBrush}" BorderBrush="{DynamicResource BorderBrush}" />
+        </DockPanel>
+
+        <DockPanel Grid.Row="2" Margin="0,16,0,6" LastChildFill="False">
+            <TextBlock DockPanel.Dock="Left" Text="AI explanation" FontWeight="SemiBold" VerticalAlignment="Center"
+                       Foreground="{DynamicResource TextBrush}" />
+            <Button x:Name="GenerateButton" DockPanel.Dock="Right" Content="Generar explicación con IA"
+                    Style="{StaticResource PrimaryButton}" Click="Generate_Click" />
+        </DockPanel>
+
+        <!-- AI explanation -->
+        <DockPanel Grid.Row="3">
+            <TextBlock x:Name="ExplanationStatus" DockPanel.Dock="Top" Margin="0,0,0,6" TextWrapping="Wrap"
+                       Foreground="{DynamicResource MutedTextBrush}" />
+            <TextBox x:Name="ExplanationText" IsReadOnly="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"
+                     Padding="10,8" Background="{DynamicResource SurfaceBrush}" BorderBrush="{DynamicResource BorderBrush}" />
+        </DockPanel>
+    </Grid>
+</Window>

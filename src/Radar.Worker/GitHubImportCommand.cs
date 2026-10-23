@@ -15,14 +15,13 @@ internal static class GitHubImportCommand
 
     public static async Task<int> RunAsync(string repositoryArgument)
     {
-        var parts = repositoryArgument.Split('/');
-        if (parts.Length != 2 || parts.Any(string.IsNullOrWhiteSpace))
+        if (!GitHubRepository.TryParse(repositoryArgument, out var gitHubRepository, out _))
         {
             Console.Error.WriteLine($"Usage: Radar.Worker {Name} <owner>/<repository>");
             return 2;
         }
 
-        var (owner, repository) = (parts[0], parts[1]);
+        var (owner, repository) = (gitHubRepository.Owner, gitHubRepository.Name);
 
         var database = RadarDatabase.CreateDefault();
         database.Initialize();

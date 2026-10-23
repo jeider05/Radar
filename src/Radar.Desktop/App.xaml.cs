@@ -1,4 +1,4 @@
-﻿using System.Windows;
+using System.Windows;
 
 namespace Radar.Desktop;
 
@@ -12,6 +12,15 @@ public partial class App : Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        ThemeManager.Initialize();
+        try
+        {
+            VideoNotifier.Register();
+        }
+        catch (Exception)
+        {
+            // Without registration Windows may not show notifications; new videos are still listed as unread.
+        }
         _workerSupervisor.Start();
     }
 

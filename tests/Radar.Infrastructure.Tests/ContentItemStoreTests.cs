@@ -154,6 +154,61 @@ public sealed class ContentItemStoreTests : IDisposable
         Assert.Empty(_store.GetAll());
     }
 
+    [Fact]
+    public void SaveExplanation_then_GetExplanation_returns_it()
+    {
+        var item = _store.TryAdd(_sourceId, "release-1", "Release 1", "https://example.invalid/release-1", "Notes")!;
+
+        var saved = _store.SaveExplanation(item.Id, "Explicación de prueba", "gemini-test-model");
+        var loaded = _store.GetExplanation(item.Id);
+
+        Assert.Equal(saved, loaded);
+        Assert.Equal("Explicación de prueba", loaded!.Text);
+        Assert.Equal("gemini-test-model", loaded.Model);
+        Assert.Equal(DateTimeKind.Utc, loaded.CreatedAtUtc.Kind);
+    }
+
+    [Fact]
+    public void GetExplanation_returns_null_when_none_was_saved()
+    {
+        var item = _store.TryAdd(_sourceId, "release-1", "Release 1", "https://example.invalid/release-1")!;
+
+        Assert.Null(_store.GetExplanation(item.Id));
+    }
+
+    [Fact]
+    public void SaveExplanation_replaces_a_previous_explanation_without_duplicates()
+    {
+        var item = _store.TryAdd(_sourceId, "release-1", "Release 1", "https://example.invalid/release-1")!;
+
+        _store.SaveExplanation(item.Id, "Primera", "model-a");
+        _store.SaveExplanation(item.Id, "Segunda", "model-b");
+
+        Assert.Equal("Segunda", _store.GetExplanation(item.Id)!.Text);
+        using var connection = _database.OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM ContentExplanations;";
+        Assert.Equal(1L, command.ExecuteScalar());
+    }
+
+    [Fact]
+    public void SaveExplanation_for_a_missing_content_item_throws()
+    {
+        var exception = Assert.Throws<SqliteException>(() => _store.SaveExplanation(999, "Texto", "model"));
+
+        Assert.Equal(19, exception.SqliteErrorCode); // SQLITE_CONSTRAINT (foreign key)
+    }
+
+    [Fact]
+    public void Saving_an_explanation_does_not_change_the_content_item()
+    {
+        var item = _store.TryAdd(_sourceId, "release-1", "Release 1", "https://example.invalid/release-1", "Notes")!;
+
+        _store.SaveExplanation(item.Id, "Explicación", "model");
+
+        Assert.Equal(item, Assert.Single(_store.GetBySource(_sourceId)));
+    }
+
     private static DateTime Utc(int year, int month, int day) => new(year, month, day, 0, 0, 0, DateTimeKind.Utc);
 
     private long AddSource(string externalId) =>

@@ -92,6 +92,48 @@ public sealed class ContentItemStore(RadarDatabase database)
         return command.ExecuteNonQuery() > 0;
     }
 
+    /// <summary>Returns the stored explanation of a content item, or null when none was generated yet.</summary>
+    public ContentExplanation? GetExplanation(long contentItemId)
+    {
+        using var connection = database.OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT ContentItemId, Text, Model, CreatedAtUtc
+            FROM ContentExplanations
+            WHERE ContentItemId = $contentItemId;
+            """;
+        command.Parameters.AddWithValue("$contentItemId", contentItemId);
+
+        using var reader = command.ExecuteReader();
+        return reader.Read()
+            ? new ContentExplanation(reader.GetInt64(0), reader.GetString(1), reader.GetString(2), Parse(reader.GetString(3)))
+            : null;
+    }
+
+    /// <summary>
+    /// Stores the explanation of a content item, replacing a previous one.
+    /// Throws <see cref="SqliteException"/> when the content item does not exist.
+    /// </summary>
+    public ContentExplanation SaveExplanation(long contentItemId, string text, string model)
+    {
+        var createdAtUtc = DateTime.UtcNow;
+
+        using var connection = database.OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO ContentExplanations (ContentItemId, Text, Model, CreatedAtUtc)
+            VALUES ($contentItemId, $text, $model, $createdAtUtc)
+            ON CONFLICT (ContentItemId) DO UPDATE SET Text = excluded.Text, Model = excluded.Model, CreatedAtUtc = excluded.CreatedAtUtc;
+            """;
+        command.Parameters.AddWithValue("$contentItemId", contentItemId);
+        command.Parameters.AddWithValue("$text", text);
+        command.Parameters.AddWithValue("$model", model);
+        command.Parameters.AddWithValue("$createdAtUtc", Format(createdAtUtc));
+        command.ExecuteNonQuery();
+
+        return new ContentExplanation(contentItemId, text, model, createdAtUtc);
+    }
+
     private static string Format(DateTime utc) => utc.ToString("O", CultureInfo.InvariantCulture);
 
     private static DateTime Parse(string value) =>

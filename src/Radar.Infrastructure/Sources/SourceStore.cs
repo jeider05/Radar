@@ -5,6 +5,13 @@ using Radar.Infrastructure.Persistence;
 
 namespace Radar.Infrastructure.Sources;
 
+public enum SourceDeleteResult
+{
+    Deleted,
+    HasContent,
+    NotFound,
+}
+
 public sealed class SourceStore(RadarDatabase database)
 {
     /// <summary>
@@ -78,6 +85,58 @@ public sealed class SourceStore(RadarDatabase database)
             ORDER BY Id;
             """;
         return ReadAll(command);
+    }
+
+    /// <summary>Pauses or resumes monitoring of a source. Returns false when the source does not exist.</summary>
+    public bool SetActive(long sourceId, bool isActive)
+    {
+        using var connection = database.OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = "UPDATE Sources SET IsActive = $isActive WHERE Id = $id;";
+        command.Parameters.AddWithValue("$isActive", isActive);
+        command.Parameters.AddWithValue("$id", sourceId);
+        return command.ExecuteNonQuery() > 0;
+    }
+
+    /// <summary>
+    /// Deletes a source only when it has no content items, so detected history is never lost.
+    /// Sources with content should be paused instead.
+    /// </summary>
+    public SourceDeleteResult TryDelete(long sourceId)
+    {
+        using var connection = database.OpenConnection();
+        // IMMEDIATE: the Worker cannot add content between the check and the delete.
+        using var transaction = connection.BeginTransaction(deferred: false);
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            SELECT EXISTS (SELECT 1 FROM Sources WHERE Id = $id),
+                   EXISTS (SELECT 1 FROM ContentItems WHERE SourceId = $id);
+            """;
+        command.Parameters.AddWithValue("$id", sourceId);
+
+        bool exists, hasContent;
+        using (var reader = command.ExecuteReader())
+        {
+            reader.Read();
+            exists = reader.GetBoolean(0);
+            hasContent = reader.GetBoolean(1);
+        }
+
+        if (!exists)
+        {
+            return SourceDeleteResult.NotFound;
+        }
+
+        if (hasContent)
+        {
+            return SourceDeleteResult.HasContent;
+        }
+
+        command.CommandText = "DELETE FROM Sources WHERE Id = $id;";
+        command.ExecuteNonQuery();
+        transaction.Commit();
+        return SourceDeleteResult.Deleted;
     }
 
     private static List<Source> ReadAll(SqliteCommand command)
