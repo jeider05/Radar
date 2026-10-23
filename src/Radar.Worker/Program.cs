@@ -1,3 +1,4 @@
+using Radar.Infrastructure.Persistence;
 using Radar.Worker;
 
 // Only one Worker may run per user session. A second instance exits immediately.
@@ -6,6 +7,8 @@ if (!isFirstInstance)
 {
     return;
 }
+
+RadarDatabase.CreateDefault().Initialize();
 
 var builder = Host.CreateApplicationBuilder(args);
 builder.Services.AddHostedService<Worker>();

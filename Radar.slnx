@@ -5,4 +5,7 @@
     <Project Path="src/Radar.Infrastructure/Radar.Infrastructure.csproj" />
     <Project Path="src/Radar.Worker/Radar.Worker.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Radar.Infrastructure.Tests/Radar.Infrastructure.Tests.csproj" />
+  </Folder>
 </Solution>
