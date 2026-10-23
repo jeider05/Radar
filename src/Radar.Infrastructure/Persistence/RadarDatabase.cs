@@ -8,15 +8,59 @@ namespace Radar.Infrastructure.Persistence;
 /// </summary>
 public sealed class RadarDatabase
 {
+    /// <summary>
+    /// Ordered schema migrations. Migration N upgrades the database from user_version N-1 to N.
+    /// Only append new entries; never edit or reorder existing ones.
+    /// </summary>
+    private static readonly string[] Migrations =
+    [
+        // 1: Sources. IF NOT EXISTS because databases created before versioning already have it at user_version 0.
+        """
+        CREATE TABLE IF NOT EXISTS Sources (
+            Id           INTEGER PRIMARY KEY,
+            SourceType   TEXT    NOT NULL,
+            ExternalId   TEXT    NOT NULL,
+            Name         TEXT    NOT NULL,
+            Url          TEXT    NOT NULL,
+            IsActive     INTEGER NOT NULL,
+            CreatedAtUtc TEXT    NOT NULL,
+            UNIQUE (SourceType, ExternalId)
+        );
+        """,
+
+        // 2: ContentItems.
+        """
+        CREATE TABLE ContentItems (
+            Id             INTEGER PRIMARY KEY,
+            SourceId       INTEGER NOT NULL REFERENCES Sources (Id),
+            ExternalId     TEXT    NOT NULL,
+            Title          TEXT    NOT NULL,
+            Url            TEXT    NOT NULL,
+            Description    TEXT    NULL,
+            PublishedAtUtc TEXT    NULL,
+            DetectedAtUtc  TEXT    NOT NULL,
+            IsRead         INTEGER NOT NULL DEFAULT 0,
+            UNIQUE (SourceId, ExternalId)
+        );
+        """,
+    ];
+
     private readonly string _connectionString;
 
     public RadarDatabase(string databasePath)
     {
         DatabasePath = Path.GetFullPath(databasePath);
-        _connectionString = new SqliteConnectionStringBuilder { DataSource = DatabasePath }.ToString();
+        _connectionString = new SqliteConnectionStringBuilder
+        {
+            DataSource = DatabasePath,
+            ForeignKeys = true,
+        }.ToString();
     }
 
     public string DatabasePath { get; }
+
+    /// <summary>Schema version (PRAGMA user_version) that <see cref="Initialize"/> brings the database to.</summary>
+    public static long SchemaVersion => Migrations.Length;
 
     /// <summary>%LOCALAPPDATA%\Radar\radar.db</summary>
     public static string DefaultPath { get; } = Path.Combine(
@@ -31,25 +75,32 @@ public sealed class RadarDatabase
         return connection;
     }
 
-    /// <summary>Creates the database file and schema if they do not exist yet. Safe to call repeatedly.</summary>
+    /// <summary>
+    /// Creates the database file if needed and applies pending migrations. Existing data is kept. Safe to call repeatedly.
+    /// </summary>
     public void Initialize()
     {
         Directory.CreateDirectory(Path.GetDirectoryName(DatabasePath)!);
 
         using var connection = OpenConnection();
+        var version = GetUserVersion(connection);
+
+        for (var next = version + 1; next <= Migrations.Length; next++)
+        {
+            using var transaction = connection.BeginTransaction();
+            using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            // PRAGMA does not accept parameters; next is an internal integer.
+            command.CommandText = $"{Migrations[next - 1]}\nPRAGMA user_version = {next};";
+            command.ExecuteNonQuery();
+            transaction.Commit();
+        }
+    }
+
+    private static long GetUserVersion(SqliteConnection connection)
+    {
         using var command = connection.CreateCommand();
-        command.CommandText = """
-            CREATE TABLE IF NOT EXISTS Sources (
-                Id           INTEGER PRIMARY KEY,
-                SourceType   TEXT    NOT NULL,
-                ExternalId   TEXT    NOT NULL,
-                Name         TEXT    NOT NULL,
-                Url          TEXT    NOT NULL,
-                IsActive     INTEGER NOT NULL,
-                CreatedAtUtc TEXT    NOT NULL,
-                UNIQUE (SourceType, ExternalId)
-            );
-            """;
-        command.ExecuteNonQuery();
+        command.CommandText = "PRAGMA user_version;";
+        return (long)command.ExecuteScalar()!;
     }
 }

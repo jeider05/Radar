@@ -87,6 +87,19 @@ public sealed class SourceStoreTests : IDisposable
         Assert.Null(_store.Find(SourceType.GitHub, "missing"));
     }
 
+    [Fact]
+    public void GetActive_returns_only_active_sources_of_the_requested_type()
+    {
+        _database.Initialize();
+        _store.TryAdd(SourceType.GitHub, "example-org/active", "Active", "https://github.com/example-org/active");
+        _store.TryAdd(SourceType.GitHub, "example-org/inactive", "Inactive", "https://github.com/example-org/inactive", isActive: false);
+        _store.TryAdd(SourceType.YouTube, "UC_test_channel", "Channel", "https://www.youtube.com/channel/UC_test_channel");
+
+        var active = _store.GetActive(SourceType.GitHub);
+
+        Assert.Equal(["example-org/active"], active.Select(s => s.ExternalId));
+    }
+
     private long CountSources()
     {
         using var connection = _database.OpenConnection();

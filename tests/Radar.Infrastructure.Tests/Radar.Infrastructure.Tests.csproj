@@ -19,6 +19,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Radar.Infrastructure\Radar.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\Radar.Worker\Radar.Worker.csproj" />
   </ItemGroup>
 
 </Project>

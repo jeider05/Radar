@@ -53,6 +53,28 @@ public sealed class SourceStore(RadarDatabase database)
         return reader.Read() ? Read(reader) : null;
     }
 
+    public IReadOnlyList<Source> GetActive(SourceType sourceType)
+    {
+        using var connection = database.OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT Id, SourceType, ExternalId, Name, Url, IsActive, CreatedAtUtc
+            FROM Sources
+            WHERE SourceType = $sourceType AND IsActive = 1
+            ORDER BY Id;
+            """;
+        command.Parameters.AddWithValue("$sourceType", sourceType.ToString());
+
+        var sources = new List<Source>();
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            sources.Add(Read(reader));
+        }
+
+        return sources;
+    }
+
     private static Source Read(SqliteDataReader reader) => new(
         reader.GetInt64(0),
         Enum.Parse<SourceType>(reader.GetString(1)),
