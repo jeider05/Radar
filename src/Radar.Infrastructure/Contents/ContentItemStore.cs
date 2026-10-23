@@ -53,7 +53,25 @@ public sealed class ContentItemStore(RadarDatabase database)
             ORDER BY Id DESC;
             """;
         command.Parameters.AddWithValue("$sourceId", sourceId);
+        return ReadAll(command);
+    }
 
+    /// <summary>Returns the content items of all sources, newest first by publication date (detection date when unknown).</summary>
+    public IReadOnlyList<ContentItem> GetAll()
+    {
+        using var connection = database.OpenConnection();
+        using var command = connection.CreateCommand();
+        // Dates are stored as round-trip UTC strings, so text order matches chronological order.
+        command.CommandText = """
+            SELECT Id, SourceId, ExternalId, Title, Url, Description, PublishedAtUtc, DetectedAtUtc, IsRead
+            FROM ContentItems
+            ORDER BY COALESCE(PublishedAtUtc, DetectedAtUtc) DESC, Id DESC;
+            """;
+        return ReadAll(command);
+    }
+
+    private static List<ContentItem> ReadAll(SqliteCommand command)
+    {
         var items = new List<ContentItem>();
         using var reader = command.ExecuteReader();
         while (reader.Read())

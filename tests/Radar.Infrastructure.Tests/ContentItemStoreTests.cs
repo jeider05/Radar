@@ -112,6 +112,50 @@ public sealed class ContentItemStoreTests : IDisposable
         Assert.Empty(_store.GetBySource(missingSourceId));
     }
 
+    [Fact]
+    public void GetAll_returns_items_of_all_sources_newest_publication_first()
+    {
+        var otherSourceId = AddSource("example-org/other-repo");
+        _store.TryAdd(_sourceId, "old", "Old", "https://example.invalid/old", publishedAtUtc: Utc(2026, 1, 1));
+        _store.TryAdd(otherSourceId, "newest", "Newest", "https://example.invalid/newest", publishedAtUtc: Utc(2026, 9, 1));
+        _store.TryAdd(_sourceId, "middle", "Middle", "https://example.invalid/middle", publishedAtUtc: Utc(2026, 5, 1));
+
+        var items = _store.GetAll();
+
+        Assert.Equal(["newest", "middle", "old"], items.Select(i => i.ExternalId));
+        Assert.Equal([otherSourceId, _sourceId, _sourceId], items.Select(i => i.SourceId));
+    }
+
+    [Fact]
+    public void GetAll_orders_items_without_publication_date_by_detection_date()
+    {
+        _store.TryAdd(_sourceId, "published-2020", "Published 2020", "https://example.invalid/2020", publishedAtUtc: Utc(2020, 1, 1));
+        _store.TryAdd(_sourceId, "unpublished", "Detected now", "https://example.invalid/now");
+
+        Assert.Equal(["unpublished", "published-2020"], _store.GetAll().Select(i => i.ExternalId));
+    }
+
+    [Fact]
+    public void GetAll_reflects_MarkAsRead()
+    {
+        var unread = _store.TryAdd(_sourceId, "unread", "Unread", "https://example.invalid/unread", publishedAtUtc: Utc(2026, 1, 1))!;
+        var read = _store.TryAdd(_sourceId, "read", "Read", "https://example.invalid/read", publishedAtUtc: Utc(2026, 2, 1))!;
+
+        _store.MarkAsRead(read.Id);
+
+        var items = _store.GetAll().ToDictionary(i => i.Id);
+        Assert.True(items[read.Id].IsRead);
+        Assert.False(items[unread.Id].IsRead);
+    }
+
+    [Fact]
+    public void GetAll_returns_empty_list_when_there_are_no_items()
+    {
+        Assert.Empty(_store.GetAll());
+    }
+
+    private static DateTime Utc(int year, int month, int day) => new(year, month, day, 0, 0, 0, DateTimeKind.Utc);
+
     private long AddSource(string externalId) =>
         new SourceStore(_database).TryAdd(SourceType.GitHub, externalId, externalId, $"https://github.com/{externalId}")!.Id;
 

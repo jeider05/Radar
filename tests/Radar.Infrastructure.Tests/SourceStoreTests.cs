@@ -100,6 +100,19 @@ public sealed class SourceStoreTests : IDisposable
         Assert.Equal(["example-org/active"], active.Select(s => s.ExternalId));
     }
 
+    [Fact]
+    public void GetAll_returns_active_and_inactive_sources_of_every_type()
+    {
+        _database.Initialize();
+        _store.TryAdd(SourceType.GitHub, "example-org/active", "Active", "https://github.com/example-org/active");
+        _store.TryAdd(SourceType.GitHub, "example-org/inactive", "Inactive", "https://github.com/example-org/inactive", isActive: false);
+        _store.TryAdd(SourceType.YouTube, "UC_test_channel", "Channel", "https://www.youtube.com/channel/UC_test_channel");
+
+        var all = _store.GetAll();
+
+        Assert.Equal(["example-org/active", "example-org/inactive", "UC_test_channel"], all.Select(s => s.ExternalId));
+    }
+
     private long CountSources()
     {
         using var connection = _database.OpenConnection();

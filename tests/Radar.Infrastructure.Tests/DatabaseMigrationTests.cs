@@ -57,6 +57,20 @@ public sealed class DatabaseMigrationTests : IDisposable
         Assert.Equal(1L, Scalar("PRAGMA foreign_keys;"));
     }
 
+    [Fact]
+    public async Task Concurrent_initialization_from_two_processes_applies_each_migration_once()
+    {
+        // Desktop and Worker both initialize the same file on first start.
+        var path = _database.DatabasePath;
+        Directory.CreateDirectory(_directory);
+
+        var tasks = Enumerable.Range(0, 4).Select(_ => Task.Run(() => new RadarDatabase(path).Initialize()));
+        await Task.WhenAll(tasks);
+
+        Assert.Equal(RadarDatabase.SchemaVersion, Scalar("PRAGMA user_version;"));
+        Assert.Equal(1L, Scalar("SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'ContentItems';"));
+    }
+
     private void Execute(string sql)
     {
         using var connection = _database.OpenConnection();

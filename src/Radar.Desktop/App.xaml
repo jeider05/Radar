@@ -4,6 +4,14 @@
              xmlns:local="clr-namespace:Radar.Desktop"
              StartupUri="MainWindow.xaml">
     <Application.Resources>
-         
+        <!-- Radar color palette, defined once for every window. -->
+        <SolidColorBrush x:Key="PageBrush" Color="#F4F5F7" />
+        <SolidColorBrush x:Key="SurfaceBrush" Color="#FFFFFF" />
+        <SolidColorBrush x:Key="BorderBrush" Color="#E1E4E8" />
+        <SolidColorBrush x:Key="HoverBrush" Color="#EEF1F5" />
+        <SolidColorBrush x:Key="SelectedBrush" Color="#E3ECFA" />
+        <SolidColorBrush x:Key="TextBrush" Color="#1F2328" />
+        <SolidColorBrush x:Key="MutedTextBrush" Color="#656D76" />
+        <SolidColorBrush x:Key="AccentBrush" Color="#2563EB" />
     </Application.Resources>
 </Application>

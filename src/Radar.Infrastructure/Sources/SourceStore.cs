@@ -64,7 +64,24 @@ public sealed class SourceStore(RadarDatabase database)
             ORDER BY Id;
             """;
         command.Parameters.AddWithValue("$sourceType", sourceType.ToString());
+        return ReadAll(command);
+    }
 
+    /// <summary>Returns every registered source, active or not, in registration order.</summary>
+    public IReadOnlyList<Source> GetAll()
+    {
+        using var connection = database.OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT Id, SourceType, ExternalId, Name, Url, IsActive, CreatedAtUtc
+            FROM Sources
+            ORDER BY Id;
+            """;
+        return ReadAll(command);
+    }
+
+    private static List<Source> ReadAll(SqliteCommand command)
+    {
         var sources = new List<Source>();
         using var reader = command.ExecuteReader();
         while (reader.Read())

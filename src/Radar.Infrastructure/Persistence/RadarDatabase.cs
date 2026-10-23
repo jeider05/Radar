@@ -83,11 +83,20 @@ public sealed class RadarDatabase
         Directory.CreateDirectory(Path.GetDirectoryName(DatabasePath)!);
 
         using var connection = OpenConnection();
-        var version = GetUserVersion(connection);
 
-        for (var next = version + 1; next <= Migrations.Length; next++)
+        while (true)
         {
-            using var transaction = connection.BeginTransaction();
+            // BEGIN IMMEDIATE takes the write lock before reading the version, so when Desktop and Worker
+            // initialize at the same time, each migration is applied by only one of them.
+            using var transaction = connection.BeginTransaction(deferred: false);
+            var version = GetUserVersion(connection, transaction);
+            if (version >= Migrations.Length)
+            {
+                transaction.Commit();
+                return;
+            }
+
+            var next = version + 1;
             using var command = connection.CreateCommand();
             command.Transaction = transaction;
             // PRAGMA does not accept parameters; next is an internal integer.
@@ -97,9 +106,10 @@ public sealed class RadarDatabase
         }
     }
 
-    private static long GetUserVersion(SqliteConnection connection)
+    private static long GetUserVersion(SqliteConnection connection, SqliteTransaction transaction)
     {
         using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = "PRAGMA user_version;";
         return (long)command.ExecuteScalar()!;
     }
