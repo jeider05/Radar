@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Threading;
 using Radar.Core.Contents;
 using Radar.Core.Sources;
 using Radar.Infrastructure.Contents;
@@ -16,9 +17,20 @@ namespace Radar.Desktop;
 /// </summary>
 public partial class MainWindow : Window
 {
+    private static readonly TimeSpan AutoRefreshInterval = TimeSpan.FromSeconds(30);
+
     private readonly SourceStore _sources;
     private readonly ContentItemStore _contentItems;
+    private readonly DispatcherTimer _autoRefreshTimer;
+
+    // Last data shown, used to skip redrawing when nothing changed.
+    private IReadOnlyList<Source>? _loadedSources;
+    private IReadOnlyList<ContentItem>? _loadedItems;
     private IReadOnlyList<ContentItemRow> _allRows = [];
+
+    private bool _isLoading;
+    private bool _reloadPending;
+    private bool _isClosed;
 
     public MainWindow()
     {
@@ -28,11 +40,14 @@ public partial class MainWindow : Window
         _sources = new SourceStore(database);
         _contentItems = new ContentItemStore(database);
 
-        Loaded += (_, _) =>
+        _autoRefreshTimer = new DispatcherTimer { Interval = AutoRefreshInterval };
+        _autoRefreshTimer.Tick += async (_, _) => await ReloadAsync();
+
+        Loaded += async (_, _) =>
         {
             try
             {
-                database.Initialize();
+                await Task.Run(database.Initialize);
             }
             catch (Exception ex)
             {
@@ -40,27 +55,95 @@ public partial class MainWindow : Window
                 return;
             }
 
-            Reload();
+            if (_isClosed)
+            {
+                return;
+            }
+
+            await ReloadAsync();
+            _autoRefreshTimer.Start();
+        };
+
+        Closed += (_, _) =>
+        {
+            _isClosed = true;
+            _autoRefreshTimer.Stop();
         };
     }
 
-    /// <summary>Reloads sources and content from the database, keeping the selected source.</summary>
-    private void Reload()
+    /// <summary>
+    /// Reads sources and content off the UI thread and redraws only when the data changed, keeping the selected source.
+    /// Requests made while a reload is running are queued, so reloads never overlap. Never writes to the database.
+    /// </summary>
+    private async Task ReloadAsync()
     {
-        var selectedSourceId = (SourcesList.SelectedItem as SourceFilter)?.SourceId;
+        if (_isClosed)
+        {
+            return;
+        }
 
+        if (_isLoading)
+        {
+            _reloadPending = true;
+            return;
+        }
+
+        _isLoading = true;
+        try
+        {
+            do
+            {
+                _reloadPending = false;
+                await LoadOnceAsync();
+            }
+            while (_reloadPending && !_isClosed);
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task LoadOnceAsync()
+    {
         IReadOnlyList<Source> sources;
         IReadOnlyList<ContentItem> items;
         try
         {
-            sources = _sources.GetAll();
-            items = _contentItems.GetAll();
+            (sources, items) = await Task.Run(() => (_sources.GetAll(), _contentItems.GetAll()));
         }
         catch (Exception ex)
         {
-            StatusText.Text = $"Could not load data: {ex.Message}";
+            if (!_isClosed)
+            {
+                StatusText.Text = $"Could not load data: {ex.Message}";
+            }
+
             return;
         }
+
+        if (_isClosed)
+        {
+            return;
+        }
+
+        var changed = _loadedSources is null
+            || !sources.SequenceEqual(_loadedSources)
+            || !items.SequenceEqual(_loadedItems!);
+        if (changed)
+        {
+            Show(sources, items);
+        }
+
+        StatusText.Text = $"Checked {DateTime.Now:HH:mm:ss}";
+    }
+
+    private void Show(IReadOnlyList<Source> sources, IReadOnlyList<ContentItem> items)
+    {
+        _loadedSources = sources;
+        _loadedItems = items;
+
+        var selectedSourceId = (SourcesList.SelectedItem as SourceFilter)?.SourceId;
 
         var sourceNames = sources.ToDictionary(s => s.Id, s => s.Name);
         _allRows = items
@@ -72,8 +155,6 @@ public partial class MainWindow : Window
 
         SourcesList.ItemsSource = filters;
         SourcesList.SelectedItem = filters.FirstOrDefault(f => f.SourceId == selectedSourceId) ?? filters[0];
-
-        StatusText.Text = $"Updated {DateTime.Now:HH:mm:ss}";
     }
 
     private void ShowItems(SourceFilter filter)
@@ -97,9 +178,9 @@ public partial class MainWindow : Window
         }
     }
 
-    private void Refresh_Click(object sender, RoutedEventArgs e) => Reload();
+    private async void Refresh_Click(object sender, RoutedEventArgs e) => await ReloadAsync();
 
-    private void MarkAsRead_Click(object sender, RoutedEventArgs e)
+    private async void MarkAsRead_Click(object sender, RoutedEventArgs e)
     {
         if ((sender as FrameworkElement)?.DataContext is not ContentItemRow row)
         {
@@ -108,7 +189,7 @@ public partial class MainWindow : Window
 
         try
         {
-            _contentItems.MarkAsRead(row.Item.Id);
+            await Task.Run(() => _contentItems.MarkAsRead(row.Item.Id));
         }
         catch (Exception ex)
         {
@@ -116,7 +197,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        Reload();
+        await ReloadAsync();
     }
 
     private void Open_Click(object sender, RoutedEventArgs e)
