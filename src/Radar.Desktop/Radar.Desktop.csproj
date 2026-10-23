@@ -3,6 +3,8 @@
   <ItemGroup>
     <ProjectReference Include="..\Radar.Core\Radar.Core.csproj" />
     <ProjectReference Include="..\Radar.Infrastructure\Radar.Infrastructure.csproj" />
+    <!-- Build-order only: Desktop does not reference Worker code. -->
+    <ProjectReference Include="..\Radar.Worker\Radar.Worker.csproj" ReferenceOutputAssembly="false" Private="false" />
   </ItemGroup>
 
   <PropertyGroup>
@@ -12,5 +14,21 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
   </PropertyGroup>
+
+  <!--
+    The Worker is published into a "Worker" subfolder next to Radar.Desktop.exe, both on build and on publish.
+    It keeps its own deps.json and dependencies; merging it into the Desktop folder breaks its assembly resolution.
+  -->
+  <PropertyGroup>
+    <WorkerProject>..\Radar.Worker\Radar.Worker.csproj</WorkerProject>
+  </PropertyGroup>
+
+  <Target Name="PublishWorkerToOutput" AfterTargets="Build">
+    <MSBuild Projects="$(WorkerProject)" Targets="Publish" Properties="Configuration=$(Configuration);NoBuild=true;PublishDir=$([MSBuild]::NormalizeDirectory($(MSBuildProjectDirectory), $(OutDir), Worker))" />
+  </Target>
+
+  <Target Name="PublishWorkerToPublishDir" AfterTargets="Publish">
+    <MSBuild Projects="$(WorkerProject)" Targets="Publish" Properties="Configuration=$(Configuration);NoBuild=true;PublishDir=$([MSBuild]::NormalizeDirectory($(MSBuildProjectDirectory), $(PublishDir), Worker))" />
+  </Target>
 
 </Project>
