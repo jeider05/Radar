@@ -274,6 +274,9 @@ public partial class MainWindow : Window
         await ReloadAsync();
     }
 
+    private void Learn_Click(object sender, RoutedEventArgs e) =>
+        new LearningWindow(_database) { Owner = this }.ShowDialog();
+
     private async void MarkAsRead_Click(object sender, RoutedEventArgs e)
     {
         if ((sender as FrameworkElement)?.DataContext is not ContentItemRow row)

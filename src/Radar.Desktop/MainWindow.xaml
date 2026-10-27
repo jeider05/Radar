@@ -19,6 +19,7 @@
                            Foreground="{DynamicResource TextBrush}" VerticalAlignment="Center" />
                 <Button DockPanel.Dock="Right" Content="Refresh" Style="{StaticResource PrimaryButton}" Click="Refresh_Click" />
                 <Button DockPanel.Dock="Right" Content="Manage sources" Style="{StaticResource ActionButton}" Click="ManageSources_Click" />
+                <Button DockPanel.Dock="Right" Content="Aprender Gentle AI" Style="{StaticResource ActionButton}" Click="Learn_Click" />
                 <Button x:Name="ThemeButton" DockPanel.Dock="Right" Style="{StaticResource ActionButton}" Click="Theme_Click" />
                 <TextBlock x:Name="StatusText" DockPanel.Dock="Right" Margin="0,0,12,0" VerticalAlignment="Center"
                            Foreground="{DynamicResource MutedTextBrush}" />

@@ -55,6 +55,19 @@ Cierra y vuelve a abrir la terminal o Visual Studio para que Radar la lea. Opcio
 
 Así conservas fuentes, estados de lectura y explicaciones generadas.
 
+## Aprender Gentle AI
+
+El botón **Aprender Gentle AI** abre un módulo de estudio con tres vistas:
+
+| Vista | Qué hace |
+|-------|----------|
+| Aprender | Temas agrupados por categoría, con su estado (pendiente, en estudio, estudiado). Cada tema separa la explicación didáctica de lo confirmado en la documentación oficial y muestra la fuente y la fecha de consulta |
+| Exámenes | Examen general o por tema, de 5, 10 o 20 preguntas, con dificultad básica, variada o avanzada. La solución solo se muestra después de responder. Permite repetir las preguntas falladas |
+| Mi progreso | Historial de exámenes, temas pendientes y conceptos con más errores |
+
+- El catálogo de temas y preguntas viene integrado en la aplicación y se carga en la base de datos al abrir el módulo, sin tocar tu progreso.
+- Con Gemini configurado, **Generar preguntas con IA** crea preguntas nuevas de un tema usando solo sus hechos confirmados. Las preguntas repetidas se descartan y cada una indica su origen.
+
 ## Cómo funciona
 
 | Parte | Responsabilidad |
