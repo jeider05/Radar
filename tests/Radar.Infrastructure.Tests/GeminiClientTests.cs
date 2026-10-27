@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text.Json;
 using Radar.Core.Contents;
+using Radar.Core.Learning;
 using Radar.Infrastructure.Gemini;
 
 namespace Radar.Infrastructure.Tests;
@@ -135,6 +136,74 @@ public sealed class GeminiClientTests
 
         Assert.Equal(GeminiClient.DefaultModel, withDefault!.Model);
         Assert.Equal("gemini-other", withOverride!.Model);
+    }
+
+    private static readonly StudyTopic Topic = new(
+        3, "engram", "Componentes", "Engram", 6, "Qué es", "Para qué", "Cómo", "Ejemplo", "Diferencias",
+        "- La memoria local en SQLite es la fuente predeterminada.", "https://github.com/Gentleman-Programming/gentle-ai/blob/main/docs/engram.md",
+        "Consultada el 2026-10-27");
+
+    private static string QuestionsJson(string questionsArray) =>
+        JsonSerializer.Serialize(new { candidates = new[] { new { content = new { parts = new[] { new { text = questionsArray } } } } } });
+
+    [Fact]
+    public async Task GenerateStudyQuestionsAsync_returns_valid_questions_with_gemini_origin_and_topic()
+    {
+        var json = QuestionsJson("""
+            {"questions":[{"kind":"Scenario","difficulty":"Advanced","prompt":"¿Dónde guarda Engram?","options":["Nube","SQLite local","Chat"],"correctOption":1,"explanation":"La memoria local en SQLite es la fuente predeterminada."}]}
+            """);
+        var client = CreateClient(new FakeHttpMessageHandler(HttpStatusCode.OK, json), model: "gemini-test-model");
+
+        var question = Assert.Single(await client.GenerateStudyQuestionsAsync(Topic, 3, []));
+
+        Assert.Equal(Topic.Id, question.TopicId);
+        Assert.Equal(QuestionKind.Scenario, question.Kind);
+        Assert.Equal(QuestionDifficulty.Advanced, question.Difficulty);
+        Assert.Equal(["Nube", "SQLite local", "Chat"], question.Options);
+        Assert.Equal(1, question.CorrectOption);
+        Assert.Equal("Gemini gemini-test-model", question.Origin);
+    }
+
+    [Fact]
+    public async Task GenerateStudyQuestionsAsync_grounds_the_request_in_the_topic_facts_and_asks_for_json()
+    {
+        var handler = new FakeHttpMessageHandler(HttpStatusCode.OK, QuestionsJson("""{"questions":[]}"""));
+
+        await CreateClient(handler).GenerateStudyQuestionsAsync(Topic, 3, ["Pregunta ya existente"]);
+
+        using var body = JsonDocument.Parse(handler.RequestBodies[0]!);
+        var system = body.RootElement.GetProperty("system_instruction").GetProperty("parts")[0].GetProperty("text").GetString()!;
+        var user = body.RootElement.GetProperty("contents")[0].GetProperty("parts")[0].GetProperty("text").GetString()!;
+        Assert.Contains("No inventes", system);
+        Assert.Contains("La memoria local en SQLite es la fuente predeterminada.", user);
+        Assert.Contains(Topic.SourceUrl, user);
+        Assert.Contains("Pregunta ya existente", user);
+        Assert.Equal("application/json", body.RootElement.GetProperty("generationConfig").GetProperty("responseMimeType").GetString());
+    }
+
+    [Fact]
+    public async Task GenerateStudyQuestionsAsync_drops_malformed_questions()
+    {
+        var json = QuestionsJson("""
+            {"questions":[
+              {"kind":"MultipleChoice","difficulty":"Basic","prompt":"Sin respuesta válida","options":["A","B","C"],"correctOption":5,"explanation":"x"},
+              {"kind":"MultipleChoice","difficulty":"Basic","prompt":"Pocas opciones","options":["A"],"correctOption":0,"explanation":"x"},
+              {"kind":"Other","difficulty":"Basic","prompt":"Tipo raro","options":["A","B","C"],"correctOption":0,"explanation":"x"},
+              {"kind":"MultipleChoice","difficulty":"Basic","prompt":"","options":["A","B","C"],"correctOption":0,"explanation":"x"},
+              {"kind":"MultipleChoice","difficulty":"Basic","prompt":"Sin explicación","options":["A","B","C"],"correctOption":0,"explanation":" "}
+            ]}
+            """);
+        var client = CreateClient(new FakeHttpMessageHandler(HttpStatusCode.OK, json));
+
+        Assert.Empty(await client.GenerateStudyQuestionsAsync(Topic, 5, []));
+    }
+
+    [Fact]
+    public async Task GenerateStudyQuestionsAsync_with_non_json_text_throws_GeminiApiException()
+    {
+        var client = CreateClient(new FakeHttpMessageHandler(HttpStatusCode.OK, QuestionsJson("no es json")));
+
+        await Assert.ThrowsAsync<GeminiApiException>(() => client.GenerateStudyQuestionsAsync(Topic, 3, []));
     }
 
     private static GeminiClient CreateClient(FakeHttpMessageHandler handler, string model = "gemini-test-model") =>

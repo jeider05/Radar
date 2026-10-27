@@ -53,6 +53,60 @@ public sealed class RadarDatabase
             CreatedAtUtc  TEXT    NOT NULL
         );
         """,
+
+        // 4: Study module. Topic and question content is separate from the user's progress and exam history.
+        """
+        CREATE TABLE StudyTopics (
+            Id              INTEGER PRIMARY KEY,
+            Key             TEXT    NOT NULL UNIQUE,
+            Category        TEXT    NOT NULL,
+            Title           TEXT    NOT NULL,
+            SortOrder       INTEGER NOT NULL,
+            WhatItIs        TEXT    NOT NULL,
+            WhatItIsFor     TEXT    NOT NULL,
+            HowItWorks      TEXT    NOT NULL,
+            Example         TEXT    NOT NULL,
+            Differences     TEXT    NOT NULL,
+            ConfirmedFacts  TEXT    NOT NULL,
+            SourceUrl       TEXT    NOT NULL,
+            SourceReference TEXT    NOT NULL
+        );
+        CREATE TABLE StudyQuestions (
+            Id            INTEGER PRIMARY KEY,
+            TopicId       INTEGER NOT NULL REFERENCES StudyTopics (Id),
+            Kind          TEXT    NOT NULL,
+            Difficulty    TEXT    NOT NULL,
+            Prompt        TEXT    NOT NULL,
+            OptionsJson   TEXT    NOT NULL,
+            CorrectOption INTEGER NOT NULL,
+            Explanation   TEXT    NOT NULL,
+            Origin        TEXT    NOT NULL,
+            Fingerprint   TEXT    NOT NULL UNIQUE,
+            CreatedAtUtc  TEXT    NOT NULL
+        );
+        CREATE TABLE StudyTopicProgress (
+            TopicId      INTEGER PRIMARY KEY REFERENCES StudyTopics (Id),
+            Status       TEXT    NOT NULL,
+            UpdatedAtUtc TEXT    NOT NULL
+        );
+        CREATE TABLE ExamAttempts (
+            Id            INTEGER PRIMARY KEY,
+            TopicId       INTEGER NULL REFERENCES StudyTopics (Id),
+            Difficulty    TEXT    NOT NULL,
+            QuestionCount INTEGER NOT NULL,
+            StartedAtUtc  TEXT    NOT NULL,
+            FinishedAtUtc TEXT    NULL
+        );
+        CREATE TABLE ExamAnswers (
+            Id             INTEGER PRIMARY KEY,
+            AttemptId      INTEGER NOT NULL REFERENCES ExamAttempts (Id),
+            QuestionId     INTEGER NOT NULL REFERENCES StudyQuestions (Id),
+            SelectedOption INTEGER NOT NULL,
+            IsCorrect      INTEGER NOT NULL,
+            AnsweredAtUtc  TEXT    NOT NULL,
+            UNIQUE (AttemptId, QuestionId)
+        );
+        """,
     ];
 
     private readonly string _connectionString;
