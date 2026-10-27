@@ -157,7 +157,7 @@ public partial class MainWindow : Window
         var sourcesById = sources.ToDictionary(s => s.Id);
         _allRows = items
             .Select(item => sourcesById.TryGetValue(item.SourceId, out var source)
-                ? new ContentItemRow(item, source.Name, source.SourceType)
+                ? new ContentItemRow(item, source.DisplayName, source.SourceType)
                 : new ContentItemRow(item, "Unknown source", SourceType.GitHub))
             .ToList();
 
@@ -355,7 +355,7 @@ public partial class MainWindow : Window
         {
             var sourceRows = rows.Where(r => r.Item.SourceId == source.Id).ToList();
             var detail = source.IsActive ? source.SourceType.ToString() : $"{source.SourceType} · paused";
-            return new(source.Id, source.Name, detail, sourceRows.Count(r => !r.IsRead));
+            return new(source.Id, source.DisplayName, detail, sourceRows.Count(r => !r.IsRead));
         }
     }
 }
