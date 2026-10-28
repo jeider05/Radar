@@ -6,6 +6,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Radar.Core.Contents;
 using Radar.Core.Learning;
+using Radar.Infrastructure.Prompts;
 
 namespace Radar.Infrastructure.Gemini;
 
@@ -29,18 +30,8 @@ public sealed class GeminiClient(HttpClient httpClient, string apiKey, string mo
 
     private const string ApiBaseUrl = "https://generativelanguage.googleapis.com/v1beta/models";
 
-    private const string SystemInstruction = """
-        Eres un asistente que explica novedades de software a desarrolladores, con un tono educativo y claro.
-        Responde siempre en español.
-        Usa únicamente la información de las notas del release que te proporcionan. No inventes funcionalidades,
-        cifras, fechas, versiones ni consecuencias que no aparezcan en las notas. Si algo no está claro en las notas,
-        dilo explícitamente en lugar de suponerlo.
-        Estructura la respuesta en texto plano, sin Markdown, con estas secciones:
-        Resumen: dos o tres frases sobre qué trae esta versión.
-        Novedades principales: una lista breve con guiones.
-        Por qué importa: qué significa para quien usa este proyecto, solo en la medida en que las notas lo permitan.
-        Sé conciso: no más de 350 palabras.
-        """;
+    private static readonly IPromptProvider Prompts = new PromptLibrary();
+    private static readonly Lazy<PromptDefinition> ReleaseExplanationPrompt = new(() => Prompts.Load("Detalle/release-explanation"));
 
     private const string StudyQuestionsInstruction = """
         Eres un profesor que prepara preguntas de examen en español sobre Gentle AI.
@@ -83,8 +74,17 @@ public sealed class GeminiClient(HttpClient httpClient, string apiKey, string mo
             throw new GeminiApiException("This release has no notes to explain.");
         }
 
-        return await GenerateAsync(SystemInstruction, BuildPrompt(sourceName, release), null, "an explanation", cancellationToken);
+        var prompt = ReleaseExplanationPrompt.Value;
+        return await GenerateAsync(prompt.System, BuildPrompt(prompt, sourceName, release), null, "an explanation", cancellationToken);
     }
+
+    /// <summary>
+    /// Sends a prompt and asks Gemini to answer as JSON matching <paramref name="responseSchema"/>.
+    /// Callers validate and parse the returned JSON themselves.
+    /// </summary>
+    public async Task<string> GenerateJsonAsync(
+        string systemInstruction, string userPrompt, JsonElement responseSchema, string expected, CancellationToken cancellationToken = default) =>
+        await GenerateAsync(systemInstruction, userPrompt, new GenerationConfig("application/json", responseSchema), expected, cancellationToken);
 
     /// <summary>
     /// Generates up to <paramref name="count"/> Spanish study questions grounded only in the topic's confirmed facts.
@@ -206,7 +206,7 @@ public sealed class GeminiClient(HttpClient httpClient, string apiKey, string mo
             ? new StudyQuestion(0, topicId, kind, difficulty, q.Prompt.Trim(), options.Select(o => o.Trim()).ToList(), correct, q.Explanation.Trim(), $"Gemini {Model}")
             : null;
 
-    private static string BuildPrompt(string sourceName, ContentItem release)
+    private static string BuildPrompt(PromptDefinition prompt, string sourceName, ContentItem release)
     {
         var notes = release.Description!.Trim();
         var truncated = notes.Length > MaxNotesLength;
@@ -215,22 +215,19 @@ public sealed class GeminiClient(HttpClient httpClient, string apiKey, string mo
             notes = notes[..MaxNotesLength];
         }
 
-        var prompt = new StringBuilder()
-            .AppendLine($"Proyecto: {sourceName}")
-            .AppendLine($"Release: {release.Title}")
-            .AppendLine($"Publicado: {release.PublishedAtUtc?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) ?? "desconocido"}")
-            .AppendLine($"Enlace: {release.Url}")
-            .AppendLine()
-            .AppendLine("Notas originales del release:")
-            .AppendLine("<<<")
-            .AppendLine(notes)
-            .AppendLine(">>>");
-        if (truncated)
+        var variables = new Dictionary<string, string>
         {
-            prompt.AppendLine("(Las notas están truncadas por su longitud; explica solo la parte incluida.)");
-        }
+            ["projectName"] = sourceName,
+            ["title"] = release.Title,
+            ["publishedAt"] = release.PublishedAtUtc?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) ?? "desconocido",
+            ["url"] = release.Url,
+            ["notes"] = notes,
+        };
 
-        return prompt.ToString();
+        var rendered = Prompts.Render(prompt.UserTemplate, variables);
+        return truncated
+            ? $"{rendered}\n(Las notas están truncadas por su longitud; explica solo la parte incluida.)"
+            : rendered;
     }
 
     private static GeminiApiException CreateError(HttpStatusCode status) => new(status switch
@@ -253,7 +250,7 @@ public sealed class GeminiClient(HttpClient httpClient, string apiKey, string mo
         IReadOnlyList<Content> Contents,
         GenerationConfig? GenerationConfig = null);
 
-    private sealed record GenerationConfig(string ResponseMimeType);
+    private sealed record GenerationConfig(string ResponseMimeType, JsonElement? ResponseSchema = null);
 
     private sealed record GeneratedQuestions(IReadOnlyList<GeneratedQuestion>? Questions);
 

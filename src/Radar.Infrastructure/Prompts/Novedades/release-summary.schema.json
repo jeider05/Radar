@@ -1,0 +1,16 @@
+{
+  "type": "OBJECT",
+  "properties": {
+    "puntos": {
+      "type": "ARRAY",
+      "items": { "type": "STRING" },
+      "minItems": 1,
+      "maxItems": 3
+    },
+    "accion": {
+      "type": "STRING",
+      "nullable": true
+    }
+  },
+  "required": ["puntos"]
+}

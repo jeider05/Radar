@@ -14,4 +14,11 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <!-- Content items here only copy to this project's own output; Radar.Desktop and Radar.Worker link the same files (see their .csproj). -->
+  <ItemGroup>
+    <Content Include="Prompts\**\*.prompt.md;Prompts\**\*.schema.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
 </Project>

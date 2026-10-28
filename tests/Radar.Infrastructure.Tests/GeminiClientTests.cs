@@ -206,6 +206,37 @@ public sealed class GeminiClientTests
         await Assert.ThrowsAsync<GeminiApiException>(() => client.GenerateStudyQuestionsAsync(Topic, 3, []));
     }
 
+    [Fact]
+    public async Task GenerateJsonAsync_sends_response_mime_type_and_the_given_schema()
+    {
+        var handler = new FakeHttpMessageHandler(HttpStatusCode.OK, QuestionsJson("""{"puntos":["x"]}"""));
+        using var schema = JsonDocument.Parse("""{"type":"OBJECT","properties":{"puntos":{"type":"ARRAY"}}}""");
+
+        var text = await CreateClient(handler).GenerateJsonAsync(
+            "Sistema", "Usuario", schema.RootElement, "a release summary");
+
+        Assert.Equal("""{"puntos":["x"]}""", text);
+        using var body = JsonDocument.Parse(handler.RequestBodies[0]!);
+        var generationConfig = body.RootElement.GetProperty("generationConfig");
+        Assert.Equal("application/json", generationConfig.GetProperty("responseMimeType").GetString());
+        Assert.Equal("OBJECT", generationConfig.GetProperty("responseSchema").GetProperty("type").GetString());
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.BadRequest)]
+    [InlineData(HttpStatusCode.Unauthorized)]
+    [InlineData(HttpStatusCode.TooManyRequests)]
+    public async Task GenerateJsonAsync_http_errors_throw_GeminiApiException_with_status(HttpStatusCode status)
+    {
+        var handler = new FakeHttpMessageHandler(status, """{"error":{"message":"details"}}""");
+        using var schema = JsonDocument.Parse("""{"type":"OBJECT"}""");
+
+        var ex = await Assert.ThrowsAsync<GeminiApiException>(
+            () => CreateClient(handler).GenerateJsonAsync("Sistema", "Usuario", schema.RootElement, "json"));
+
+        Assert.Equal(status, ex.StatusCode);
+    }
+
     private static GeminiClient CreateClient(FakeHttpMessageHandler handler, string model = "gemini-test-model") =>
         new(new HttpClient(handler), TestApiKey, model);
 }

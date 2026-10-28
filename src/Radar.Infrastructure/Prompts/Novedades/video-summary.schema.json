@@ -1,0 +1,7 @@
+{
+  "type": "OBJECT",
+  "properties": {
+    "deQueTrata": { "type": "STRING" }
+  },
+  "required": ["deQueTrata"]
+}

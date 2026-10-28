@@ -1,0 +1,7 @@
+{
+  "type": "OBJECT",
+  "properties": {
+    "frase": { "type": "STRING" }
+  },
+  "required": ["frase"]
+}

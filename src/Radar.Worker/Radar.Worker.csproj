@@ -15,4 +15,12 @@
     <ProjectReference Include="..\Radar.Core\Radar.Core.csproj" />
     <ProjectReference Include="..\Radar.Infrastructure\Radar.Infrastructure.csproj" />
   </ItemGroup>
+
+  <!-- Radar.Infrastructure's own output is not copied downstream automatically, so link the same prompt files here. -->
+  <ItemGroup>
+    <None Include="..\Radar.Infrastructure\Prompts\**\*.prompt.md;..\Radar.Infrastructure\Prompts\**\*.schema.json">
+      <Link>Prompts\%(RecursiveDir)%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
 </Project>

@@ -7,6 +7,14 @@
     <ProjectReference Include="..\Radar.Worker\Radar.Worker.csproj" ReferenceOutputAssembly="false" Private="false" />
   </ItemGroup>
 
+  <!-- ReleaseDetailsWindow calls GeminiClient directly in this process, so it needs its own copy of the prompts too. -->
+  <ItemGroup>
+    <None Include="..\Radar.Infrastructure\Prompts\**\*.prompt.md;..\Radar.Infrastructure\Prompts\**\*.schema.json">
+      <Link>Prompts\%(RecursiveDir)%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>

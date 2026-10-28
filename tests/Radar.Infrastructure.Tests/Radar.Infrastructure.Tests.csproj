@@ -22,4 +22,11 @@
     <ProjectReference Include="..\..\src\Radar.Worker\Radar.Worker.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Include="..\..\src\Radar.Infrastructure\Prompts\**\*.prompt.md;..\..\src\Radar.Infrastructure\Prompts\**\*.schema.json">
+      <Link>Prompts\%(RecursiveDir)%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
 </Project>
