@@ -50,12 +50,13 @@ Branch: `feat/novedades-redesign`. Runner: `dotnet test Radar.slnx`. Baseline: b
 |----|-------|------|--------|
 | T1 | S1-S4 | inline | done (c02be52) |
 | T2 | S6 | inline | done (c02be52) |
-| T3 | S7-S8 | inline | pending — about to commit |
-| T4 | S5, S9, S13 (monitor tests) | inline | pending — about to commit |
-| T5 | S11-S12 | inline | pending |
+| T3 | S7-S8 | inline | done (2948031) |
+| T4 | S5, S9, S13 (monitor tests) | inline | done (9b7d9a3) |
+| T5 | S11-S12 | inline | done (2277aaf) |
 | T6 | S13 (remaining) | inline | done incrementally with T1-T4 |
 
 ## Log
 
 - L1 (verbatim, resumido del pedido original): Sesión 1 de 3, no tocar interfaz. Mover prompts de IA a archivos y hacer que el Worker genere un resumen corto por novedad guardado en la base de datos. Reglas de no-romper-nada (worker, DB, monitores, explicación IA, interfaz), arquitectura Core/Infrastructure/Worker, sin credenciales/rutas quemadas, `.env.example`, prompts como archivos (formato YAML+System+User), `PromptLibrary`/`IPromptProvider`, `ContentSummaryMonitor` + `SummaryOptions`, `GenerateJsonAsync` con schema, tablas `ContentSummaries`/`DailyDigests`, `ContentSummaryStore`, digest diario con `ItemsHash` y `DailyDigestMinInterval`, tests nuevos, commits pequeños Conventional Commits, resumen final.
 - L2 (2026-10-27): Usuario aprobó el plan ("vale si"). Decisiones de diseño registradas: (a) prompts compartidos como `<None Link>` en Desktop/Worker/Tests porque el contenido de una librería no se propaga automáticamente a los ejecutables que la referencian; (b) `ExplainReleaseAsync` mantiene su firma actual, carga el prompt internamente (lazy) para no tocar `ReleaseDetailsWindow.xaml.cs`; (c) `GenerationConfig` gana `ResponseSchema` opcional (default null) para no romper `GenerateStudyQuestionsAsync`.
+- L3 (2026-10-27): Feature completa. Build limpio (0 advertencias), 246/246 tests pasan (196 línea base + 50 nuevos). Checklist de la sección 1 verificada: Worker/mutex/GitHubImportCommand/migraciones/intervalos/explicación de ReleaseDetailsWindow sin cambios de comportamiento; UI no tocada. Único hallazgo durante la sesión: un Radar.Worker.exe residual bloqueaba el build; se mató con autorización del usuario antes de tocar código.
