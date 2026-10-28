@@ -51,9 +51,9 @@ Branch: `feat/novedades-redesign`. Runner: `dotnet test Radar.slnx`. Baseline: b
 | T1 | S1-S4 | inline | done (c02be52) |
 | T2 | S6 | inline | done (c02be52) |
 | T3 | S7-S8 | inline | pending — about to commit |
-| T4 | S5, S9 | inline | pending |
+| T4 | S5, S9, S13 (monitor tests) | inline | pending — about to commit |
 | T5 | S11-S12 | inline | pending |
-| T6 | S13 | inline | pending |
+| T6 | S13 (remaining) | inline | done incrementally with T1-T4 |
 
 ## Log
 
