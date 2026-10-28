@@ -139,6 +139,73 @@ public sealed class DatabaseMigrationTests : IDisposable
     }
 
     [Fact]
+    public void Initialize_upgrades_a_version_4_database_keeping_study_data_and_adding_summary_tables()
+    {
+        // Schema exactly as created by migrations 1 to 4 (user_version 4), with data.
+        Directory.CreateDirectory(_directory);
+        Execute("""
+            CREATE TABLE Sources (
+                Id           INTEGER PRIMARY KEY,
+                SourceType   TEXT    NOT NULL,
+                ExternalId   TEXT    NOT NULL,
+                Name         TEXT    NOT NULL,
+                Url          TEXT    NOT NULL,
+                IsActive     INTEGER NOT NULL,
+                CreatedAtUtc TEXT    NOT NULL,
+                UNIQUE (SourceType, ExternalId)
+            );
+            CREATE TABLE ContentItems (
+                Id             INTEGER PRIMARY KEY,
+                SourceId       INTEGER NOT NULL REFERENCES Sources (Id),
+                ExternalId     TEXT    NOT NULL,
+                Title          TEXT    NOT NULL,
+                Url            TEXT    NOT NULL,
+                Description    TEXT    NULL,
+                PublishedAtUtc TEXT    NULL,
+                DetectedAtUtc  TEXT    NOT NULL,
+                IsRead         INTEGER NOT NULL DEFAULT 0,
+                UNIQUE (SourceId, ExternalId)
+            );
+            CREATE TABLE ContentExplanations (
+                ContentItemId INTEGER PRIMARY KEY REFERENCES ContentItems (Id),
+                Text          TEXT    NOT NULL,
+                Model         TEXT    NOT NULL,
+                CreatedAtUtc  TEXT    NOT NULL
+            );
+            CREATE TABLE StudyTopics (
+                Id              INTEGER PRIMARY KEY,
+                Key             TEXT    NOT NULL UNIQUE,
+                Category        TEXT    NOT NULL,
+                Title           TEXT    NOT NULL,
+                SortOrder       INTEGER NOT NULL,
+                WhatItIs        TEXT    NOT NULL,
+                WhatItIsFor     TEXT    NOT NULL,
+                HowItWorks      TEXT    NOT NULL,
+                Example         TEXT    NOT NULL,
+                Differences     TEXT    NOT NULL,
+                ConfirmedFacts  TEXT    NOT NULL,
+                SourceUrl       TEXT    NOT NULL,
+                SourceReference TEXT    NOT NULL
+            );
+            INSERT INTO Sources (Id, SourceType, ExternalId, Name, Url, IsActive, CreatedAtUtc)
+            VALUES (1, 'GitHub', 'example-org/example-repo', 'Example repo', 'https://github.com/example-org/example-repo', 1, '2026-01-01T00:00:00.0000000Z');
+            INSERT INTO ContentItems (Id, SourceId, ExternalId, Title, Url, Description, PublishedAtUtc, DetectedAtUtc, IsRead)
+            VALUES (1, 1, '111', 'v1', 'https://example.invalid/v1', 'Notes', NULL, '2026-01-02T00:00:00.0000000Z', 1);
+            INSERT INTO ContentExplanations (ContentItemId, Text, Model, CreatedAtUtc)
+            VALUES (1, 'Resumen', 'gemini-test', '2026-01-03T00:00:00.0000000Z');
+            PRAGMA user_version = 4;
+            """);
+
+        _database.Initialize();
+
+        Assert.Equal(1L, Scalar("SELECT COUNT(*) FROM Sources;"));
+        Assert.Equal(1L, Scalar("SELECT COUNT(*) FROM ContentExplanations WHERE Text = 'Resumen';"));
+        Assert.Equal(1L, Scalar("SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'ContentSummaries';"));
+        Assert.Equal(1L, Scalar("SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'DailyDigests';"));
+        Assert.Equal(RadarDatabase.SchemaVersion, Scalar("PRAGMA user_version;"));
+    }
+
+    [Fact]
     public void Initialize_on_a_new_database_reaches_the_current_schema_version()
     {
         _database.Initialize();

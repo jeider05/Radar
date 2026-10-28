@@ -48,9 +48,9 @@ Branch: `feat/novedades-redesign`. Runner: `dotnet test Radar.slnx`. Baseline: b
 
 | ID | Specs | Ruta | Estado |
 |----|-------|------|--------|
-| T1 | S1-S4 | inline | pending |
-| T2 | S6 | inline | pending |
-| T3 | S7-S8 | inline | pending |
+| T1 | S1-S4 | inline | done (c02be52) |
+| T2 | S6 | inline | done (c02be52) |
+| T3 | S7-S8 | inline | pending — about to commit |
 | T4 | S5, S9 | inline | pending |
 | T5 | S11-S12 | inline | pending |
 | T6 | S13 | inline | pending |

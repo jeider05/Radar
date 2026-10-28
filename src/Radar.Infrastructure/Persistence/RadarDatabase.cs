@@ -107,6 +107,28 @@ public sealed class RadarDatabase
             UNIQUE (AttemptId, QuestionId)
         );
         """,
+
+        // 5: AI summaries. One short ContentSummary per item, plus one DailyDigest sentence per local date
+        // built from that day's already-generated summaries. Separate from ContentExplanations.
+        """
+        CREATE TABLE ContentSummaries (
+            ContentItemId INTEGER PRIMARY KEY REFERENCES ContentItems (Id),
+            Kind          TEXT    NOT NULL,
+            Json          TEXT    NULL,
+            PromptVersion INTEGER NOT NULL,
+            Model         TEXT    NOT NULL,
+            Status        TEXT    NOT NULL,
+            Error         TEXT    NULL,
+            CreatedAtUtc  TEXT    NOT NULL
+        );
+        CREATE TABLE DailyDigests (
+            Date         TEXT PRIMARY KEY,
+            Json         TEXT NOT NULL,
+            ItemsHash    TEXT NOT NULL,
+            Model        TEXT NOT NULL,
+            CreatedAtUtc TEXT NOT NULL
+        );
+        """,
     ];
 
     private readonly string _connectionString;
