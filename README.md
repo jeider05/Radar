@@ -35,7 +35,32 @@ La clave se lee de la variable de entorno `GEMINI_API_KEY`. Nunca se guarda en e
 [Environment]::SetEnvironmentVariable("GEMINI_API_KEY", "tu-clave", "User")
 ```
 
-Cierra y vuelve a abrir la terminal o Visual Studio para que Radar la lea. Opcionalmente, `GEMINI_MODEL` cambia el modelo (por defecto `gemini-3.8-flash`).
+Cierra y vuelve a abrir la terminal o Visual Studio para que Radar la lea. `.env.example` en la raíz documenta estas variables (sin valores reales); copialas a tu entorno real, nunca a un `.env` que se suba a Git.
+
+| Variable | Qué hace |
+|----------|----------|
+| `GEMINI_API_KEY` | Clave de la API de Gemini. Sin ella, Radar sigue funcionando pero no genera explicaciones ni resúmenes con IA |
+| `GEMINI_MODEL` | Modelo de Gemini a usar. Opcional, por defecto `gemini-3.8-flash` |
+| `RADAR_PROMPTS_DIR` | Carpeta donde buscar los prompts (`.prompt.md`/`.schema.json`). Opcional, por defecto la carpeta `Prompts` junto al ejecutable |
+
+### Prompts como archivos
+
+Los prompts de IA no están escritos en el código: viven en `src/Radar.Infrastructure/Prompts/` como archivos `.prompt.md` (encabezado YAML + secciones `## System`/`## User` con variables `{{nombre}}`) y, cuando la respuesta es JSON, un `.schema.json` junto a cada uno. `PromptLibrary` los carga, separa y reemplaza variables en tiempo de ejecución.
+
+### Resúmenes automáticos (Worker)
+
+El Worker resume en 1-3 frases cada release o video nuevo con Gemini y guarda el resultado en la tabla `ContentSummaries`, además de un digest diario ("Tu radar hoy") en `DailyDigests`. Se configura en `src/Radar.Worker/appsettings.json`, sección `Summaries`:
+
+| Opción | Qué hace |
+|--------|----------|
+| `Enabled` | Activa o desactiva el monitor de resúmenes |
+| `PollingInterval` | Tiempo entre ciclos |
+| `MaxItemsPerCycle` | Máximo de novedades resumidas por ciclo, para cuidar la cuota de Gemini |
+| `MaxAgeDays` | No resume novedades más antiguas que esto |
+| `OnlyUnread` | Si es `true`, solo resume novedades no leídas |
+| `DailyDigestMinInterval` | Mínimo tiempo entre dos digests diarios de la misma fecha |
+
+Sin `GEMINI_API_KEY`, este monitor no hace nada (deja un aviso una sola vez en el log) y el resto del Worker sigue funcionando igual.
 
 ## Datos locales
 
