@@ -38,12 +38,16 @@ public partial class MainWindow : Window
     private IReadOnlyList<ContentSummary>? _loadedSummaries;
     private DailyDigest? _loadedDigest;
     private IReadOnlyList<NewsItem> _allNews = [];
+    private IReadOnlyList<SourceFilter> _sourceFilters = [];
+    private SourceFilter? _allFilter;
 
     private const int PageSize = 10;
     private ContentPeriod _period = ContentPeriod.All;
     private ContentTypeFilter _typeFilter = ContentTypeFilter.All;
     private int _pageNumber = 1;
-    private long? _shownSourceId;
+
+    // null = "Novedades" (all sources). The single source of truth for what the sidebar has selected.
+    private long? _selectedSourceId;
 
     private bool _isLoading;
     private bool _reloadPending;
@@ -172,20 +176,33 @@ public partial class MainWindow : Window
         _loadedDigest = digest;
 
         _allNews = NewsListing.BuildRows(items, sources, summaries, _geminiConfigured);
+        _allFilter = SourceFilter.All(_allNews);
+        NovedadesUnreadText.Text = _allFilter.UnreadText;
 
-        var selectedSourceId = (SourcesList.SelectedItem as SourceFilter)?.SourceId;
-
-        var filters = new List<SourceFilter> { SourceFilter.All(_allNews) };
+        var filters = new List<SourceFilter>();
         foreach (var group in SourceGrouping.GroupByType(sources))
         {
             var groupName = GroupLabel(group.SourceType);
             filters.AddRange(group.Sources.Select(s => SourceFilter.For(s, _allNews, groupName)));
         }
+        _sourceFilters = filters;
 
         SourcesList.ItemsSource = filters;
         // ItemsSource is a new list every reload, so its default view needs the grouping re-applied each time.
         CollectionViewSource.GetDefaultView(filters).GroupDescriptions.Add(new PropertyGroupDescription(nameof(SourceFilter.GroupName)));
-        SourcesList.SelectedItem = filters.FirstOrDefault(f => f.SourceId == selectedSourceId) ?? filters[0];
+
+        SyncSelectionVisuals();
+        RenderCurrentView();
+    }
+
+    /// <summary>Makes the sidebar's selected entry (Novedades or a source) match <see cref="_selectedSourceId"/>.</summary>
+    private void SyncSelectionVisuals()
+    {
+        var matching = _sourceFilters.FirstOrDefault(f => f.SourceId == _selectedSourceId);
+        SourcesList.SelectionChanged -= SourcesList_SelectionChanged;
+        SourcesList.SelectedItem = matching;
+        SourcesList.SelectionChanged += SourcesList_SelectionChanged;
+        NovedadesToggle.IsChecked = matching is null;
     }
 
     /// <summary>Spanish sidebar label for a source group. Presentation-only; the grouping itself is Core logic.</summary>
@@ -248,29 +265,37 @@ public partial class MainWindow : Window
         NextPageButton.IsEnabled = page.PageNumber < page.PageCount;
     }
 
-    private void ShowCurrentItems()
+    /// <summary>Renders whatever <see cref="_selectedSourceId"/> currently points to (Novedades or a source).</summary>
+    private void RenderCurrentView()
     {
-        if (SourcesList.SelectedItem is SourceFilter filter)
+        var filter = _sourceFilters.FirstOrDefault(f => f.SourceId == _selectedSourceId) ?? _allFilter;
+        if (filter is not null)
         {
             ShowItems(filter);
         }
     }
 
-    private void SourcesList_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    /// <summary>Selects Novedades (null) or a source, resetting to page 1 only when the selection actually changes.</summary>
+    private void Navigate(long? sourceId)
     {
-        if (SourcesList.SelectedItem is not SourceFilter filter)
+        if (sourceId != _selectedSourceId)
         {
-            return;
-        }
-
-        // A different source starts at page 1; re-selecting the same source after a reload keeps the page.
-        if (filter.SourceId != _shownSourceId)
-        {
-            _shownSourceId = filter.SourceId;
+            _selectedSourceId = sourceId;
             _pageNumber = 1;
         }
 
-        ShowItems(filter);
+        SyncSelectionVisuals();
+        RenderCurrentView();
+    }
+
+    private void Novedades_Click(object sender, RoutedEventArgs e) => Navigate(null);
+
+    private void SourcesList_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (SourcesList.SelectedItem is SourceFilter filter)
+        {
+            Navigate(filter.SourceId);
+        }
     }
 
     private void Period_Checked(object sender, RoutedEventArgs e)
@@ -282,7 +307,7 @@ public partial class MainWindow : Window
 
         _period = Enum.Parse<ContentPeriod>(tag);
         _pageNumber = 1;
-        ShowCurrentItems();
+        RenderCurrentView();
     }
 
     private void TypeFilter_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -294,19 +319,19 @@ public partial class MainWindow : Window
 
         _typeFilter = Enum.Parse<ContentTypeFilter>(tag);
         _pageNumber = 1;
-        ShowCurrentItems();
+        RenderCurrentView();
     }
 
     private void PreviousPage_Click(object sender, RoutedEventArgs e)
     {
         _pageNumber--;
-        ShowCurrentItems();
+        RenderCurrentView();
     }
 
     private void NextPage_Click(object sender, RoutedEventArgs e)
     {
         _pageNumber++;
-        ShowCurrentItems();
+        RenderCurrentView();
     }
 
     private async void Refresh_Click(object sender, RoutedEventArgs e) => await ReloadAsync();
@@ -421,8 +446,8 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// An entry of the sources sidebar. <see cref="SourceId"/> is null for "Novedades" (all sources);
-    /// <see cref="GroupName"/> is empty for it too, so it renders above the "Repositorios"/"Canales" groups without a header.
+    /// A selectable scope: "Novedades" (all sources, <see cref="SourceId"/> null, kept out of <see cref="SourcesList"/>
+    /// and shown via <see cref="NovedadesToggle"/> instead) or one source, grouped as Repositorios/Canales.
     /// </summary>
     private sealed record SourceFilter(long? SourceId, string Name, int Unread, string GroupName, bool IsPaused)
     {
