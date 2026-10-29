@@ -22,12 +22,13 @@ Branch: `feat/novedades-redesign`. Runner: `dotnet test Radar.slnx`. Baseline: b
 
 | ID | Specs | Ruta | Estado |
 |----|-------|------|--------|
-| T1 | S3, S7, S9, S11, S12 (Core) | inline | pending |
-| T2 | S3 (constante YouTube) | inline | pending |
-| T3 | S5-S10 (Desktop XAML+code-behind) | inline | pending |
-| T4 | S13 (verificación final) | inline | pending |
+| T1 | S3, S7, S9, S11, S12 (Core) | inline | done (aef21b9) |
+| T2 | S3 (constante YouTube) | inline | done (bedd5ea) |
+| T3 | S5-S10 (Desktop XAML+code-behind) | inline | done (bedd5ea) |
+| T4 | S13 (verificación final) | inline | done — ver L3 |
 
 ## Log
 
 - L1 (verbatim, resumido): Sesión 3 de 3. Rediseñar la lista de Novedades y mostrar los resúmenes automáticos leyendo solo la DB (nunca Gemini). No romper recarga/filtros/acciones/notificaciones/explicación IA/menú lateral. Filtros y preparación de datos en Core puro con tests. Diseño: líneas finas, paleta de sesión 2, tamaños específicos, columna centrada ~760px. Encabezado con título+no leídos+Actualizar(ícono)+tema. Línea de resumen del día (AiBrush, solo en vista general). Filtros en una fila (periodos + tipo). Lista sin tarjetas: release con viñetas, video con miniatura 176×99 (constante de URL) y frase. Estados de resumen: listo/pendiente/sin clave/error. Revisión final de las 3 sesiones con checklist explícito.
 - L2 (2026-10-29): Usuario aprobó el plan, incluida la heurística de "Pendiente" (Desktop lee su propia `GEMINI_API_KEY`) y el cambio de Refresh a botón-ícono sin color de acento.
+- L3 (2026-10-29): Build limpio, 264/264 tests. Verificación visual (screenshots reales, no asumidas): encabezado, sidebar, filtros, lista, tema claro/oscuro se ven bien. Encontré y corregí un bug real: el `ComboBox` por defecto no respeta `Background`/`Foreground` de WPF (quedaba blanco con texto casi invisible en ambos temas) — le hice una plantilla propia. No pude verificar con mis propios ojos: resúmenes generados por el Worker (no había `GEMINI_API_KEY` configurada en esta sesión de prueba), la frase del día (no había `DailyDigests` en esta DB), diseño de video (no hay fuentes de YouTube en esta DB local), notificaciones de video y "Generar explicación con IA" (sin cambios de código, pero no los re-probé). Esos quedan para que el usuario los confirme.
