@@ -1,5 +1,3 @@
-using System.Diagnostics;
-using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
@@ -10,13 +8,14 @@ using Radar.Infrastructure.Contents;
 using Radar.Infrastructure.Gemini;
 using Radar.Infrastructure.Persistence;
 using Radar.Infrastructure.Sources;
-using Radar.Infrastructure.YouTube;
 
 namespace Radar.Desktop;
 
 /// <summary>
-/// Main screen: registered sources on the left, detected content (with its AI summary) on the right.
-/// Reads the same database as the Worker through RadarDatabase.CreateDefault(). Never calls Gemini itself.
+/// App shell: the sidebar (sources, navigation) on the left, and a swappable content area on the right that
+/// shows either <see cref="NovedadesView"/> or <see cref="ReleaseDetailView"/>. Reads the same database as the
+/// Worker through RadarDatabase.CreateDefault(). Never calls Gemini itself for the Novedades list; the detail
+/// view may, through <see cref="ReleaseDetailGenerator"/>, the same Infrastructure service the Worker uses.
 /// </summary>
 public partial class MainWindow : Window
 {
@@ -28,8 +27,11 @@ public partial class MainWindow : Window
     private readonly ContentSummaryStore _summaries;
     private readonly DispatcherTimer _autoRefreshTimer;
 
-    // Whether this Desktop process has GEMINI_API_KEY configured, checked once at startup. Used only to tell
-    // apart "summary pending" from "summaries are off" for items that have no ContentSummaries row yet.
+    private readonly NovedadesView _novedadesView;
+    private readonly ReleaseDetailGenerator _detailGenerator;
+    private ReleaseDetailView? _detailView;
+
+    // Whether this Desktop process has GEMINI_API_KEY configured, checked once at startup.
     private readonly bool _geminiConfigured;
 
     // Last data shown, used to skip redrawing when nothing changed.
@@ -38,13 +40,8 @@ public partial class MainWindow : Window
     private IReadOnlyList<ContentSummary>? _loadedSummaries;
     private DailyDigest? _loadedDigest;
     private IReadOnlyList<NewsItem> _allNews = [];
-    private IReadOnlyList<SourceFilter> _sourceFilters = [];
-    private SourceFilter? _allFilter;
-
-    private const int PageSize = 10;
-    private ContentPeriod _period = ContentPeriod.All;
-    private ContentTypeFilter _typeFilter = ContentTypeFilter.All;
-    private int _pageNumber = 1;
+    private IReadOnlyList<SourceFilterInfo> _sourceFilters = [];
+    private SourceFilterInfo? _allFilter;
 
     // null = "Novedades" (all sources). The single source of truth for what the sidebar has selected.
     private long? _selectedSourceId;
@@ -56,13 +53,19 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
-        UpdateThemeButton();
 
         var database = _database = RadarDatabase.CreateDefault();
         _sources = new SourceStore(database);
         _contentItems = new ContentItemStore(database);
         _summaries = new ContentSummaryStore(database);
-        _geminiConfigured = !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(GeminiClient.ApiKeyVariable));
+        var details = new ContentDetailStore(database);
+        var prompts = new Radar.Infrastructure.Prompts.PromptLibrary();
+        var gemini = GeminiClient.FromEnvironment(GeminiClient.CreateHttpClient());
+        _geminiConfigured = gemini is not null;
+        _detailGenerator = new ReleaseDetailGenerator(gemini, details, prompts);
+
+        _novedadesView = new NovedadesView(_contentItems, ReloadAsync, ShowDetails);
+        MainContent.Content = _novedadesView;
 
         _autoRefreshTimer = new DispatcherTimer { Interval = AutoRefreshInterval };
         _autoRefreshTimer.Tick += async (_, _) => await ReloadAsync();
@@ -75,7 +78,7 @@ public partial class MainWindow : Window
             }
             catch (Exception ex)
             {
-                StatusText.Text = $"No se pudo abrir la base de datos: {ex.Message}";
+                _novedadesView.SetStatus($"No se pudo abrir la base de datos: {ex.Message}");
                 return;
             }
 
@@ -97,8 +100,8 @@ public partial class MainWindow : Window
 
     /// <summary>
     /// Reads sources, content and AI summaries off the UI thread and redraws only when something changed,
-    /// keeping the selected source. Requests made while a reload is running are queued, so reloads never
-    /// overlap. Never writes to the database and never contacts Gemini.
+    /// keeping the selected source, period, type and page. Requests made while a reload is running are queued,
+    /// so reloads never overlap. Never writes to the database and never contacts Gemini.
     /// </summary>
     private async Task ReloadAsync()
     {
@@ -147,7 +150,7 @@ public partial class MainWindow : Window
         {
             if (!_isClosed)
             {
-                StatusText.Text = $"No se pudieron cargar los datos: {ex.Message}";
+                _novedadesView.SetStatus($"No se pudieron cargar los datos: {ex.Message}");
             }
 
             return;
@@ -163,7 +166,7 @@ public partial class MainWindow : Window
             Show(sources, items, summaries, digest);
         }
 
-        StatusText.Text = $"Revisado {DateTime.Now:HH:mm:ss}";
+        _novedadesView.SetStatus($"Revisado {DateTime.Now:HH:mm:ss}");
     }
 
     private void Show(IReadOnlyList<Source> sources, IReadOnlyList<ContentItem> items, IReadOnlyList<ContentSummary> summaries, DailyDigest? digest)
@@ -176,24 +179,27 @@ public partial class MainWindow : Window
         _loadedDigest = digest;
 
         _allNews = NewsListing.BuildRows(items, sources, summaries, _geminiConfigured);
-        _allFilter = SourceFilter.All(_allNews);
+        _allFilter = SourceFilterInfo.All(_allNews);
         NovedadesUnreadText.Text = _allFilter.UnreadText;
 
-        var filters = new List<SourceFilter>();
+        var filters = new List<SourceFilterInfo>();
         foreach (var group in SourceGrouping.GroupByType(sources))
         {
             var groupName = GroupLabel(group.SourceType);
-            filters.AddRange(group.Sources.Select(s => SourceFilter.For(s, _allNews, groupName)));
+            filters.AddRange(group.Sources.Select(s => SourceFilterInfo.For(s, _allNews, groupName)));
         }
         _sourceFilters = filters;
 
         SourcesList.ItemsSource = filters;
         // ItemsSource is a new list every reload, so its default view needs the grouping re-applied each time.
-        CollectionViewSource.GetDefaultView(filters).GroupDescriptions.Add(new PropertyGroupDescription(nameof(SourceFilter.GroupName)));
+        CollectionViewSource.GetDefaultView(filters).GroupDescriptions.Add(new PropertyGroupDescription(nameof(SourceFilterInfo.GroupName)));
 
         SyncSelectionVisuals();
-        RenderCurrentView();
+        _novedadesView.Show(_allNews, CurrentFilter(), digest, resetToFirstPage: false);
     }
+
+    private SourceFilterInfo CurrentFilter() =>
+        _sourceFilters.FirstOrDefault(f => f.SourceId == _selectedSourceId) ?? _allFilter ?? SourceFilterInfo.Empty;
 
     /// <summary>Makes the sidebar's selected entry (Novedades or a source) match <see cref="_selectedSourceId"/>.</summary>
     private void SyncSelectionVisuals()
@@ -222,128 +228,43 @@ public partial class MainWindow : Window
         catch (Exception ex)
         {
             // Notifications are a convenience: the videos are still listed as unread.
-            StatusText.Text = $"No se pudo mostrar la notificación: {ex.Message}";
-        }
-    }
-
-    /// <summary>
-    /// Shows the current page of the selected source's items in the selected period and type, and refreshes
-    /// the header title/unread count and the daily digest line.
-    /// </summary>
-    private void ShowItems(SourceFilter filter)
-    {
-        var nowUtc = DateTime.UtcNow;
-        var rows = _allNews
-            .Where(r => filter.SourceId is not { } sourceId || r.SourceId == sourceId)
-            .Where(r => ContentListing.IsInPeriod(r.Item, _period, nowUtc, TimeZoneInfo.Local))
-            .ToList();
-        rows = ContentListing.FilterByType(rows, _typeFilter).ToList();
-
-        var page = ContentListing.GetPage(rows, _pageNumber, PageSize);
-        _pageNumber = page.PageNumber;
-
-        ItemsList.ItemsSource = page.Items.Select(n => new NewsItemView(n)).ToList();
-
-        HeaderTitleText.Text = filter.Name;
-        HeaderUnreadText.Text = $"{rows.Count(r => !r.IsRead)} sin leer";
-
-        var showDigest = filter.IsAllFilter && _loadedDigest is not null;
-        DigestPanel.Visibility = showDigest ? Visibility.Visible : Visibility.Collapsed;
-        if (showDigest)
-        {
-            DigestText.Text = _loadedDigest!.Frase;
-        }
-
-        EmptyText.Text = _period == ContentPeriod.All
-            ? "Todavía no hay novedades. El Worker las agrega a medida que las encuentra."
-            : "No hay novedades en este período.";
-        EmptyText.Visibility = rows.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-
-        Pager.Visibility = page.PageCount > 1 ? Visibility.Visible : Visibility.Collapsed;
-        PageText.Text = $"Página {page.PageNumber} de {page.PageCount}";
-        PreviousPageButton.IsEnabled = page.PageNumber > 1;
-        NextPageButton.IsEnabled = page.PageNumber < page.PageCount;
-    }
-
-    /// <summary>Renders whatever <see cref="_selectedSourceId"/> currently points to (Novedades or a source).</summary>
-    private void RenderCurrentView()
-    {
-        var filter = _sourceFilters.FirstOrDefault(f => f.SourceId == _selectedSourceId) ?? _allFilter;
-        if (filter is not null)
-        {
-            ShowItems(filter);
+            _novedadesView.SetStatus($"No se pudo mostrar la notificación: {ex.Message}");
         }
     }
 
     /// <summary>Selects Novedades (null) or a source, resetting to page 1 only when the selection actually changes.</summary>
     private void Navigate(long? sourceId)
     {
-        if (sourceId != _selectedSourceId)
-        {
-            _selectedSourceId = sourceId;
-            _pageNumber = 1;
-        }
+        var changed = sourceId != _selectedSourceId;
+        _selectedSourceId = sourceId;
 
         SyncSelectionVisuals();
-        RenderCurrentView();
+        _novedadesView.Show(_allNews, CurrentFilter(), _loadedDigest, resetToFirstPage: changed);
     }
 
-    private void Novedades_Click(object sender, RoutedEventArgs e) => Navigate(null);
+    private void Novedades_Click(object sender, RoutedEventArgs e)
+    {
+        GoToNovedades();
+        Navigate(null);
+    }
 
     private void SourcesList_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (SourcesList.SelectedItem is SourceFilter filter)
+        if (SourcesList.SelectedItem is SourceFilterInfo filter)
         {
+            GoToNovedades();
             Navigate(filter.SourceId);
         }
     }
 
-    private void Period_Checked(object sender, RoutedEventArgs e)
+    private void GoToNovedades() => MainContent.Content = _novedadesView;
+
+    private async void ShowDetails(NewsItemView item)
     {
-        if (sender is not FrameworkElement { Tag: string tag })
-        {
-            return;
-        }
-
-        _period = Enum.Parse<ContentPeriod>(tag);
-        _pageNumber = 1;
-        RenderCurrentView();
+        var detailView = _detailView ??= new ReleaseDetailView(_contentItems, _detailGenerator, _geminiConfigured, GoToNovedades);
+        MainContent.Content = detailView;
+        await detailView.ShowAsync(item);
     }
-
-    private void TypeFilter_SelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (TypeFilterCombo.SelectedItem is not ComboBoxItem { Tag: string tag })
-        {
-            return;
-        }
-
-        _typeFilter = Enum.Parse<ContentTypeFilter>(tag);
-        _pageNumber = 1;
-        RenderCurrentView();
-    }
-
-    private void PreviousPage_Click(object sender, RoutedEventArgs e)
-    {
-        _pageNumber--;
-        RenderCurrentView();
-    }
-
-    private void NextPage_Click(object sender, RoutedEventArgs e)
-    {
-        _pageNumber++;
-        RenderCurrentView();
-    }
-
-    private async void Refresh_Click(object sender, RoutedEventArgs e) => await ReloadAsync();
-
-    private void Theme_Click(object sender, RoutedEventArgs e)
-    {
-        ThemeManager.Toggle();
-        UpdateThemeButton();
-    }
-
-    private void UpdateThemeButton() =>
-        ThemeButton.Content = ThemeManager.Current == AppTheme.Dark ? "Light mode" : "Dark mode";
 
     private async void ManageSources_Click(object sender, RoutedEventArgs e)
     {
@@ -353,119 +274,4 @@ public partial class MainWindow : Window
 
     private void Learn_Click(object sender, RoutedEventArgs e) =>
         new LearningWindow(_database) { Owner = this }.ShowDialog();
-
-    private async void MarkAsRead_Click(object sender, RoutedEventArgs e)
-    {
-        if ((sender as FrameworkElement)?.DataContext is not NewsItemView row)
-        {
-            return;
-        }
-
-        try
-        {
-            await Task.Run(() => _contentItems.MarkAsRead(row.Item.Id));
-        }
-        catch (Exception ex)
-        {
-            StatusText.Text = $"No se pudo marcar como leído: {ex.Message}";
-            return;
-        }
-
-        await ReloadAsync();
-    }
-
-    private void Details_Click(object sender, RoutedEventArgs e)
-    {
-        if ((sender as FrameworkElement)?.DataContext is NewsItemView row)
-        {
-            new ReleaseDetailsWindow(_contentItems, row.Item, row.SourceName, row.SourceType) { Owner = this }.ShowDialog();
-        }
-    }
-
-    private void Open_Click(object sender, RoutedEventArgs e)
-    {
-        if ((sender as FrameworkElement)?.DataContext is not NewsItemView row)
-        {
-            return;
-        }
-
-        // Only web links are opened; anything else in the database is never passed to the shell.
-        if (!Uri.TryCreate(row.Url, UriKind.Absolute, out var uri) || (uri.Scheme != Uri.UriSchemeHttps && uri.Scheme != Uri.UriSchemeHttp))
-        {
-            StatusText.Text = "Esta novedad no tiene un enlace web válido.";
-            return;
-        }
-
-        try
-        {
-            Process.Start(new ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true });
-        }
-        catch (Exception ex)
-        {
-            StatusText.Text = $"No se pudo abrir el navegador: {ex.Message}";
-        }
-    }
-
-    /// <summary>A Core <see cref="NewsItem"/> plus the thin, Infrastructure-dependent bits only the UI needs (dates, thumbnail URL).</summary>
-    private sealed record NewsItemView(NewsItem News)
-    {
-        public ContentItem Item => News.Item;
-
-        public string Title => News.Item.Title;
-
-        public string Url => News.Item.Url;
-
-        public bool IsRead => News.IsRead;
-
-        public string SourceName => News.SourceName;
-
-        public SourceType SourceType => News.SourceType;
-
-        public bool IsVideo => SourceType == SourceType.YouTube;
-
-        public string KindLabel => IsVideo ? "Video" : "Release";
-
-        public string DateText => Item.PublishedAtUtc is { } published
-            ? FormatDate(published)
-            : $"Detectado {FormatDate(Item.DetectedAtUtc)}";
-
-        public string? ThumbnailUrl => IsVideo ? string.Format(YouTubeClient.ThumbnailUrlFormat, Item.ExternalId) : null;
-
-        public IReadOnlyList<string>? SummaryBullets => News.ReleaseSummaryBullets;
-
-        public string? VideoSummaryText => News.VideoSummary?.DeQueTrata;
-
-        public bool ShowReleaseBullets => News.SummaryStatus == SummaryDisplayStatus.Ready && !IsVideo && SummaryBullets is { Count: > 0 };
-
-        public bool ShowVideoSummary => News.SummaryStatus == SummaryDisplayStatus.Ready && IsVideo && !string.IsNullOrEmpty(VideoSummaryText);
-
-        public bool ShowPending => News.SummaryStatus == SummaryDisplayStatus.Pending;
-
-        private static string FormatDate(DateTime utc) =>
-            utc.ToLocalTime().ToString("MMM d, yyyy", CultureInfo.InvariantCulture);
-    }
-
-    /// <summary>
-    /// A selectable scope: "Novedades" (all sources, <see cref="SourceId"/> null, kept out of <see cref="SourcesList"/>
-    /// and shown via <see cref="NovedadesToggle"/> instead) or one source, grouped as Repositorios/Canales.
-    /// </summary>
-    private sealed record SourceFilter(long? SourceId, string Name, int Unread, string GroupName, bool IsPaused)
-    {
-        public bool IsAllFilter => SourceId is null;
-
-        public string UnreadText => Unread > 0 ? Unread.ToString(CultureInfo.InvariantCulture) : "";
-
-        public bool ShowUnreadDot => !IsAllFilter && Unread > 0;
-
-        public string DisplayName => IsPaused ? $"{Name} · pausada" : Name;
-
-        public static SourceFilter All(IReadOnlyList<NewsItem> rows) =>
-            new(null, "Novedades", rows.Count(r => !r.IsRead), GroupName: "", IsPaused: false);
-
-        public static SourceFilter For(Source source, IReadOnlyList<NewsItem> rows, string groupName)
-        {
-            var sourceRows = rows.Where(r => r.SourceId == source.Id).ToList();
-            return new(source.Id, source.DisplayName, sourceRows.Count(r => !r.IsRead), groupName, IsPaused: !source.IsActive);
-        }
-    }
 }

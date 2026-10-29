@@ -27,11 +27,21 @@ public sealed class ReleaseDetailGenerator(GeminiClient? gemini, ContentDetailSt
             return ReleaseDetail.TryParse(readyJson, out var cached, out _) ? cached : null;
         }
 
+        return await GenerateAsync(item, sourceName, cancellationToken);
+    }
+
+    /// <summary>Generates and saves a new ficha unconditionally, even when a ready one already exists ("Regenerar").</summary>
+    public Task<ReleaseDetail?> RegenerateAsync(ContentItem item, string sourceName, CancellationToken cancellationToken = default) =>
+        GenerateAsync(item, sourceName, cancellationToken);
+
+    private async Task<ReleaseDetail?> GenerateAsync(ContentItem item, string sourceName, CancellationToken cancellationToken)
+    {
         if (gemini is null || string.IsNullOrWhiteSpace(item.Description))
         {
             return null;
         }
 
+        var prompt = prompts.Load(PromptName);
         var schema = prompts.LoadSchema(PromptName);
         var variables = new Dictionary<string, string>
         {
