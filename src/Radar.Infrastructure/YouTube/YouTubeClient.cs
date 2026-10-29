@@ -26,6 +26,10 @@ public sealed class YouTubeApiException(string message, HttpStatusCode? statusCo
 public sealed partial class YouTubeClient(HttpClient httpClient)
 {
     private const string FeedUrl = "https://www.youtube.com/feeds/videos.xml?channel_id=";
+
+    /// <summary>Format string for a video's thumbnail image; {0} is the video id.</summary>
+    public const string ThumbnailUrlFormat = "https://i.ytimg.com/vi/{0}/hqdefault.jpg";
+
     private static readonly TimeSpan DefaultRetryAfter = TimeSpan.FromMinutes(15);
 
     private static readonly XNamespace Atom = "http://www.w3.org/2005/Atom";
