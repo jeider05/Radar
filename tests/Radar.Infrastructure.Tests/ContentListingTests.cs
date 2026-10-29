@@ -1,4 +1,5 @@
 using Radar.Core.Contents;
+using Radar.Core.Sources;
 
 namespace Radar.Infrastructure.Tests;
 
@@ -86,6 +87,39 @@ public sealed class ContentListingTests
     {
         Assert.Throws<ArgumentOutOfRangeException>(() => ContentListing.GetPage(new List<int> { 1 }, 1, pageSize: 0));
     }
+
+    [Fact]
+    public void FilterByType_All_returns_every_item()
+    {
+        var items = new List<NewsItem> { NewsRow(SourceType.GitHub), NewsRow(SourceType.YouTube) };
+
+        Assert.Equal(2, ContentListing.FilterByType(items, ContentTypeFilter.All).Count);
+    }
+
+    [Fact]
+    public void FilterByType_Release_keeps_only_GitHub_items()
+    {
+        var release = NewsRow(SourceType.GitHub);
+        var video = NewsRow(SourceType.YouTube);
+
+        var result = ContentListing.FilterByType([release, video], ContentTypeFilter.Release);
+
+        Assert.Equal([release], result);
+    }
+
+    [Fact]
+    public void FilterByType_Video_keeps_only_YouTube_items()
+    {
+        var release = NewsRow(SourceType.GitHub);
+        var video = NewsRow(SourceType.YouTube);
+
+        var result = ContentListing.FilterByType([release, video], ContentTypeFilter.Video);
+
+        Assert.Equal([video], result);
+    }
+
+    private static NewsItem NewsRow(SourceType sourceType) =>
+        new(Item(publishedAtUtc: NowUtc), "Source", sourceType, SummaryDisplayStatus.None, null, null);
 
     private static ContentItem Item(DateTime? publishedAtUtc, DateTime? detectedAtUtc = null) =>
         new(1, 1, "id", "Title", "https://example.invalid", null, publishedAtUtc, detectedAtUtc ?? NowUtc, IsRead: false);

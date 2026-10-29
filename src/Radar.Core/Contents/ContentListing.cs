@@ -1,3 +1,5 @@
+using Radar.Core.Sources;
+
 namespace Radar.Core.Contents;
 
 /// <summary>Period of the calendar, relative to now, used to filter content.</summary>
@@ -7,6 +9,14 @@ public enum ContentPeriod
     Today,
     ThisMonth,
     ThisYear,
+}
+
+/// <summary>Content type filter for the Novedades list: all items, only releases, or only videos.</summary>
+public enum ContentTypeFilter
+{
+    All,
+    Release,
+    Video,
 }
 
 /// <summary>One page of a list. PageNumber is 1-based.</summary>
@@ -48,4 +58,13 @@ public static class ContentListing
         var pageItems = items.Skip((page - 1) * pageSize).Take(pageSize).ToList();
         return new ContentPage<T>(pageItems, page, pageCount);
     }
+
+    /// <summary>Filters Novedades rows by content type. GitHub sources are releases; YouTube sources are videos.</summary>
+    public static IReadOnlyList<NewsItem> FilterByType(IReadOnlyList<NewsItem> items, ContentTypeFilter filter) => filter switch
+    {
+        ContentTypeFilter.All => items,
+        ContentTypeFilter.Release => items.Where(i => i.SourceType == SourceType.GitHub).ToList(),
+        ContentTypeFilter.Video => items.Where(i => i.SourceType == SourceType.YouTube).ToList(),
+        _ => throw new ArgumentOutOfRangeException(nameof(filter), filter, null),
+    };
 }
