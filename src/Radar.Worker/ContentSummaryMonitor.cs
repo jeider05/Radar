@@ -29,6 +29,9 @@ public sealed class SummaryOptions
 
     /// <summary>Minimum time between two daily digests of the same date, even when its items changed.</summary>
     public TimeSpan DailyDigestMinInterval { get; set; } = TimeSpan.FromMinutes(30);
+
+    /// <summary>Maximum release detail "fichas" generated per cycle, to stay within the Gemini quota.</summary>
+    public int MaxDetailsPerCycle { get; set; } = 2;
 }
 
 /// <summary>
@@ -39,6 +42,8 @@ public sealed class ContentSummaryMonitor(
     GeminiClient? gemini,
     ContentSummaryStore summaries,
     ContentItemStore contentItems,
+    ContentDetailStore details,
+    ReleaseDetailGenerator detailGenerator,
     IPromptProvider prompts,
     IOptions<SummaryOptions> options,
     ILogger<ContentSummaryMonitor> logger)
@@ -103,8 +108,34 @@ public sealed class ContentSummaryMonitor(
         if (!quotaExhausted)
         {
             await RefreshDailyDigestAsync(gemini, cancellationToken);
+            await GenerateDetailsAsync(cancellationToken);
         }
     }
+
+    /// <summary>Generates release detail "fichas" for the most recent unread releases, bounded by MaxDetailsPerCycle.</summary>
+    private async Task GenerateDetailsAsync(CancellationToken cancellationToken)
+    {
+        var candidates = details.GetCandidates(ReleaseDetailPromptVersion(), _options.OnlyUnread)
+            .Where(candidate => IsWithinMaxAge(candidate.Item, _options.MaxAgeDays))
+            .Take(_options.MaxDetailsPerCycle)
+            .ToList();
+
+        foreach (var candidate in candidates)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            try
+            {
+                await detailGenerator.EnsureGeneratedAsync(candidate.Item, candidate.SourceName, cancellationToken);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogError(ex, "Could not generate the detail ficha for content item {ContentItemId}.", candidate.Item.Id);
+            }
+        }
+    }
+
+    private int ReleaseDetailPromptVersion() => prompts.Load(ReleaseDetailGenerator.PromptName).Version;
 
     /// <summary>Returns true when Gemini's quota was reached and the rest of this cycle should be skipped.</summary>
     private async Task<bool> SummarizePendingItemsAsync(GeminiClient client, CancellationToken cancellationToken)

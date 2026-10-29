@@ -57,7 +57,7 @@ public sealed class ContentDetailStoreTests : IDisposable
 
         var candidates = _details.GetCandidates(promptVersion: 1, onlyUnread: false);
 
-        Assert.Equal([item.Id], candidates.Select(c => c.Id));
+        Assert.Equal([item.Id], candidates.Select(c => c.Item.Id));
     }
 
     [Fact]
@@ -102,7 +102,7 @@ public sealed class ContentDetailStoreTests : IDisposable
 
         var candidates = _details.GetCandidates(promptVersion: 1, onlyUnread: true);
 
-        Assert.Equal([unread.Id], candidates.Select(c => c.Id));
+        Assert.Equal([unread.Id], candidates.Select(c => c.Item.Id));
     }
 
     private ContentItem AddGitHubItem(string externalId)

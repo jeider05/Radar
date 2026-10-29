@@ -31,6 +31,7 @@ builder.Services.AddSingleton(database);
 builder.Services.AddSingleton<SourceStore>();
 builder.Services.AddSingleton<ContentItemStore>();
 builder.Services.AddSingleton<ContentSummaryStore>();
+builder.Services.AddSingleton<ContentDetailStore>();
 builder.Services.AddSingleton<IPromptProvider, PromptLibrary>();
 
 // Each client gets its own HttpClient with its own settings.
@@ -44,6 +45,7 @@ builder.Services.AddHostedService<YouTubeChannelMonitor>();
 
 // Null when GEMINI_API_KEY is not configured; ContentSummaryMonitor logs a one-time warning and does nothing.
 builder.Services.AddSingleton<GeminiClient>(_ => GeminiClient.FromEnvironment(GeminiClient.CreateHttpClient())!);
+builder.Services.AddSingleton<ReleaseDetailGenerator>();
 builder.Services.AddHostedService<ContentSummaryMonitor>();
 
 var host = builder.Build();

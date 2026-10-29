@@ -5,6 +5,9 @@ using Radar.Infrastructure.Persistence;
 
 namespace Radar.Infrastructure.Contents;
 
+/// <summary>A GitHub release that still needs (or needs a newer) detail "ficha".</summary>
+public sealed record DetailCandidate(ContentItem Item, string SourceName);
+
 public sealed class ContentDetailStore(RadarDatabase database)
 {
     /// <summary>Returns the stored "ficha" of a content item, or null when none was generated yet.</summary>
@@ -27,12 +30,12 @@ public sealed class ContentDetailStore(RadarDatabase database)
     /// Active GitHub content items whose "ficha" is missing or used an older prompt version than
     /// <paramref name="promptVersion"/>. Most recently published (or detected) first.
     /// </summary>
-    public IReadOnlyList<ContentItem> GetCandidates(int promptVersion, bool onlyUnread)
+    public IReadOnlyList<DetailCandidate> GetCandidates(int promptVersion, bool onlyUnread)
     {
         using var connection = database.OpenConnection();
         using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT ci.Id, ci.SourceId, ci.ExternalId, ci.Title, ci.Url, ci.Description, ci.PublishedAtUtc, ci.DetectedAtUtc, ci.IsRead
+            SELECT ci.Id, ci.SourceId, ci.ExternalId, ci.Title, ci.Url, ci.Description, ci.PublishedAtUtc, ci.DetectedAtUtc, ci.IsRead, s.Name
             FROM ContentItems ci
             JOIN Sources s ON s.Id = ci.SourceId
             LEFT JOIN ContentDetails cd ON cd.ContentItemId = ci.Id
@@ -44,17 +47,18 @@ public sealed class ContentDetailStore(RadarDatabase database)
         command.Parameters.AddWithValue("$onlyUnread", onlyUnread);
         command.Parameters.AddWithValue("$promptVersion", promptVersion);
 
-        var items = new List<ContentItem>();
+        var candidates = new List<DetailCandidate>();
         using var reader = command.ExecuteReader();
         while (reader.Read())
         {
-            items.Add(new ContentItem(
+            var item = new ContentItem(
                 reader.GetInt64(0), reader.GetInt64(1), reader.GetString(2), reader.GetString(3), reader.GetString(4),
                 reader.IsDBNull(5) ? null : reader.GetString(5), reader.IsDBNull(6) ? null : Parse(reader.GetString(6)),
-                Parse(reader.GetString(7)), reader.GetBoolean(8)));
+                Parse(reader.GetString(7)), reader.GetBoolean(8));
+            candidates.Add(new DetailCandidate(item, reader.GetString(9)));
         }
 
-        return items;
+        return candidates;
     }
 
     /// <summary>Stores a successfully generated "ficha", replacing a previous one for the same content item.</summary>

@@ -23,6 +23,7 @@ public sealed class ContentSummaryMonitorTests : IDisposable
     private readonly SourceStore _sources;
     private readonly ContentItemStore _items;
     private readonly ContentSummaryStore _summaries;
+    private readonly ContentDetailStore _details;
     private readonly IPromptProvider _prompts = new PromptLibrary();
 
     public ContentSummaryMonitorTests()
@@ -32,6 +33,7 @@ public sealed class ContentSummaryMonitorTests : IDisposable
         _sources = new SourceStore(_database);
         _items = new ContentItemStore(_database);
         _summaries = new ContentSummaryStore(_database);
+        _details = new ContentDetailStore(_database);
     }
 
     [Fact]
@@ -179,6 +181,34 @@ public sealed class ContentSummaryMonitorTests : IDisposable
     }
 
     [Fact]
+    public async Task RunCycleAsync_generates_detail_fichas_bounded_by_MaxDetailsPerCycle()
+    {
+        var older = AddGitHubItem("v1", description: "Notas 1.", publishedAtUtc: DateTime.UtcNow.AddDays(-2));
+        var newer = AddGitHubItem("v2", description: "Notas 2.", publishedAtUtc: DateTime.UtcNow.AddDays(-1));
+        var monitor = CreateMonitor(CreateSmartHandler(), maxDetailsPerCycle: 1);
+
+        await monitor.RunCycleAsync(CancellationToken.None);
+
+        Assert.NotNull(_details.Get(newer.Id));
+        Assert.Null(_details.Get(older.Id));
+    }
+
+    [Fact]
+    public async Task RunCycleAsync_skips_a_detail_ficha_already_generated_with_the_current_prompt_version()
+    {
+        var item = AddGitHubItem("v1", description: "Notas 1.", publishedAtUtc: DateTime.UtcNow);
+        var currentVersion = _prompts.Load(ReleaseDetailGenerator.PromptName).Version;
+        var original = _details.SaveReady(item.Id, """{"resumen":"original"}""", currentVersion, "gemini-test");
+        var monitor = CreateMonitor(CreateSmartHandler(), maxDetailsPerCycle: 5);
+
+        await monitor.RunCycleAsync(CancellationToken.None);
+
+        var detail = _details.Get(item.Id);
+        Assert.Equal(original.Json, detail!.Json);
+        Assert.Equal(original.CreatedAtUtc, detail.CreatedAtUtc);
+    }
+
+    [Fact]
     public void Non_positive_polling_interval_is_rejected()
     {
         Assert.Throws<ArgumentOutOfRangeException>(
@@ -199,7 +229,9 @@ public sealed class ContentSummaryMonitorTests : IDisposable
                 ? """{"puntos":["Resumen generado"]}"""
                 : body.Contains("\"deQueTrata\"")
                     ? """{"deQueTrata":"Video resumido"}"""
-                    : """{"frase":"Resumen del día"}""";
+                    : body.Contains("\"resumen\"")
+                        ? """{"resumen":"Ficha generada","teAfecta":{"nivel":"no","texto":"x"},"cambios":[],"instalacion":[],"planDeUso":[],"versiones":[]}"""
+                        : """{"frase":"Resumen del día"}""";
             return FakeHttpMessageHandler.Response(HttpStatusCode.OK, GeminiResponse(json));
         });
         return handler;
@@ -210,15 +242,23 @@ public sealed class ContentSummaryMonitorTests : IDisposable
         JsonSerializer.Serialize(new { candidates = new[] { new { content = new { parts = new[] { new { text } } } } } });
 
     private ContentSummaryMonitor CreateMonitor(
-        FakeHttpMessageHandler handler, int maxItemsPerCycle = 5, TimeSpan? pollingInterval = null) =>
-        CreateMonitor(new GeminiClient(new HttpClient(handler), TestApiKey, "gemini-test-model"), handler, maxItemsPerCycle, pollingInterval);
+        FakeHttpMessageHandler handler, int maxItemsPerCycle = 5, TimeSpan? pollingInterval = null, int maxDetailsPerCycle = 0) =>
+        CreateMonitor(new GeminiClient(new HttpClient(handler), TestApiKey, "gemini-test-model"), handler, maxItemsPerCycle, pollingInterval, maxDetailsPerCycle);
 
     private ContentSummaryMonitor CreateMonitor(
-        GeminiClient? gemini, FakeHttpMessageHandler handler, int maxItemsPerCycle = 5, TimeSpan? pollingInterval = null)
+        GeminiClient? gemini, FakeHttpMessageHandler handler, int maxItemsPerCycle = 5, TimeSpan? pollingInterval = null, int maxDetailsPerCycle = 0)
     {
-        var options = new SummaryOptions { MaxItemsPerCycle = maxItemsPerCycle, PollingInterval = pollingInterval ?? TimeSpan.FromMinutes(2) };
+        // maxDetailsPerCycle defaults to 0 so existing summary-focused tests are not affected by detail generation;
+        // tests that exercise it explicitly raise the limit.
+        var options = new SummaryOptions
+        {
+            MaxItemsPerCycle = maxItemsPerCycle,
+            PollingInterval = pollingInterval ?? TimeSpan.FromMinutes(2),
+            MaxDetailsPerCycle = maxDetailsPerCycle,
+        };
+        var generator = new ReleaseDetailGenerator(gemini, _details, _prompts);
         return new ContentSummaryMonitor(
-            gemini, _summaries, _items, _prompts, Options.Create(options), NullLogger<ContentSummaryMonitor>.Instance);
+            gemini, _summaries, _items, _details, generator, _prompts, Options.Create(options), NullLogger<ContentSummaryMonitor>.Instance);
     }
 
     private ContentItem AddGitHubItem(string externalId, string? description = null, DateTime? publishedAtUtc = null)
