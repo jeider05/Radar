@@ -11,15 +11,11 @@
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <!-- Header -->
-        <Border Grid.Row="0" Background="{DynamicResource SurfaceBrush}" BorderBrush="{DynamicResource BorderBrush}"
+        <!-- Header: Refresh, theme toggle and status stay here; navigation moved into the sidebar. -->
+        <Border Grid.Row="0" Background="{DynamicResource PageBrush}" BorderBrush="{DynamicResource DividerBrush}"
                 BorderThickness="0,0,0,1" Padding="20,12">
             <DockPanel LastChildFill="False">
-                <TextBlock DockPanel.Dock="Left" Text="Radar" FontSize="20" FontWeight="SemiBold"
-                           Foreground="{DynamicResource TextBrush}" VerticalAlignment="Center" />
                 <Button DockPanel.Dock="Right" Content="Refresh" Style="{StaticResource PrimaryButton}" Click="Refresh_Click" />
-                <Button DockPanel.Dock="Right" Content="Manage sources" Style="{StaticResource ActionButton}" Click="ManageSources_Click" />
-                <Button DockPanel.Dock="Right" Content="Aprender Gentle AI" Style="{StaticResource ActionButton}" Click="Learn_Click" />
                 <Button x:Name="ThemeButton" DockPanel.Dock="Right" Style="{StaticResource ActionButton}" Click="Theme_Click" />
                 <TextBlock x:Name="StatusText" DockPanel.Dock="Right" Margin="0,0,12,0" VerticalAlignment="Center"
                            Foreground="{DynamicResource MutedTextBrush}" />
@@ -28,38 +24,90 @@
 
         <Grid Grid.Row="1">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="250" />
+                <ColumnDefinition Width="240" />
                 <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
 
-            <!-- Sources sidebar -->
-            <Border Grid.Column="0" Background="{DynamicResource SurfaceBrush}" BorderBrush="{DynamicResource BorderBrush}"
-                    BorderThickness="0,0,1,0" Padding="12,16">
-                <DockPanel>
-                    <TextBlock DockPanel.Dock="Top" Text="SOURCES" FontSize="11" FontWeight="SemiBold"
-                               Foreground="{DynamicResource MutedTextBrush}" Margin="8,0,0,8" />
-                    <ListBox x:Name="SourcesList" BorderThickness="0" Background="Transparent"
-                             ItemContainerStyle="{StaticResource PlainListItem}"
-                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                             SelectionChanged="SourcesList_SelectionChanged">
-                        <ListBox.ItemTemplate>
-                            <DataTemplate>
-                                <Grid Margin="8,7">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel>
-                                        <TextBlock Text="{Binding Name}" Foreground="{DynamicResource TextBrush}"
-                                                   FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-                                        <TextBlock Text="{Binding Detail}" Foreground="{DynamicResource MutedTextBrush}" FontSize="11" />
-                                    </StackPanel>
-                                    <TextBlock Grid.Column="1" Text="{Binding UnreadText}" VerticalAlignment="Center"
-                                               Foreground="{DynamicResource AccentBrush}" FontWeight="SemiBold" Margin="8,0,0,0" />
-                                </Grid>
-                            </DataTemplate>
-                        </ListBox.ItemTemplate>
-                    </ListBox>
+            <!-- Sidebar: logo, primary navigation, sources grouped by type, add a source. -->
+            <Border Grid.Column="0" Background="{DynamicResource PageBrush}" BorderBrush="{DynamicResource DividerBrush}"
+                    BorderThickness="0,0,1,0">
+                <DockPanel Margin="0,16,0,16">
+
+                    <!-- Logo -->
+                    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="20,0,20,20">
+                        <Canvas Width="20" Height="20" Margin="0,0,8,0">
+                            <Ellipse Width="20" Height="20" Stroke="{DynamicResource AccentBrush}" StrokeThickness="1.5" />
+                            <Ellipse Canvas.Left="5" Canvas.Top="5" Width="10" Height="10" Stroke="{DynamicResource AccentBrush}" StrokeThickness="1.5" />
+                            <Line X1="10" Y1="10" X2="18" Y2="2" Stroke="{DynamicResource AccentBrush}" StrokeThickness="1.5"
+                                  StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                        </Canvas>
+                        <TextBlock Text="Radar" FontSize="17" FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}"
+                                   VerticalAlignment="Center" />
+                    </StackPanel>
+
+                    <!-- Add a source -->
+                    <Button DockPanel.Dock="Bottom" Content="＋ Agregar fuente" Style="{StaticResource SidebarNavButton}"
+                            Margin="12,8,12,0" Click="ManageSources_Click" />
+
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <StackPanel Margin="12,0,12,0">
+                            <!-- Primary navigation -->
+                            <Button Content="Guías" Style="{StaticResource SidebarNavButton}" IsEnabled="False"
+                                    ToolTip="Próximamente" ToolTipService.ShowOnDisabled="True" />
+                            <Button Content="Mi stack" Style="{StaticResource SidebarNavButton}" IsEnabled="False"
+                                    ToolTip="Próximamente" ToolTipService.ShowOnDisabled="True" />
+                            <Button Content="Aprender Gentle AI" Style="{StaticResource SidebarNavButton}" Click="Learn_Click" />
+
+                            <!-- "Novedades" (all sources) plus every source, grouped as Repositorios/Canales. -->
+                            <ListBox x:Name="SourcesList" BorderThickness="0" Background="Transparent" Margin="0,8,0,0"
+                                     ItemContainerStyle="{StaticResource PlainListItem}"
+                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                     ScrollViewer.VerticalScrollBarVisibility="Disabled"
+                                     SelectionChanged="SourcesList_SelectionChanged">
+                                <ListBox.GroupStyle>
+                                    <GroupStyle>
+                                        <GroupStyle.HeaderTemplate>
+                                            <DataTemplate>
+                                                <TextBlock x:Name="HeaderText" Text="{Binding Name}" FontSize="12"
+                                                           Foreground="{DynamicResource MutedTextBrush}" Margin="8,16,0,6" />
+                                                <DataTemplate.Triggers>
+                                                    <!-- "Novedades" uses an empty group name so it shows no header. -->
+                                                    <DataTrigger Binding="{Binding Name}" Value="">
+                                                        <Setter TargetName="HeaderText" Property="Visibility" Value="Collapsed" />
+                                                    </DataTrigger>
+                                                </DataTemplate.Triggers>
+                                            </DataTemplate>
+                                        </GroupStyle.HeaderTemplate>
+                                    </GroupStyle>
+                                </ListBox.GroupStyle>
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid Height="36" Margin="8,0,8,0">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock x:Name="NameText" Grid.Column="0" Text="{Binding DisplayName}"
+                                                       VerticalAlignment="Center" Foreground="{DynamicResource TextBrush}"
+                                                       TextTrimming="CharacterEllipsis" />
+                                            <!-- "Novedades": total unread as text. Any other source: a small dot when it has unread items. -->
+                                            <TextBlock Grid.Column="1" Text="{Binding UnreadText}" VerticalAlignment="Center"
+                                                       FontWeight="SemiBold" Foreground="{DynamicResource AccentTextBrush}" Margin="8,0,0,0"
+                                                       Visibility="{Binding IsAllFilter, Converter={StaticResource BoolToVisibilityConverter}}" />
+                                            <Ellipse Grid.Column="1" Width="6" Height="6" Fill="{DynamicResource AccentBrush}"
+                                                     VerticalAlignment="Center" Margin="8,0,2,0"
+                                                     Visibility="{Binding ShowUnreadDot, Converter={StaticResource BoolToVisibilityConverter}}" />
+                                        </Grid>
+                                        <DataTemplate.Triggers>
+                                            <DataTrigger Binding="{Binding IsPaused}" Value="True">
+                                                <Setter TargetName="NameText" Property="Foreground" Value="{DynamicResource MutedTextBrush}" />
+                                            </DataTrigger>
+                                        </DataTemplate.Triggers>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                        </StackPanel>
+                    </ScrollViewer>
                 </DockPanel>
             </Border>
 

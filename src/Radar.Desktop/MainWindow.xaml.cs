@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Data;
 using System.Windows.Threading;
 using Radar.Core.Contents;
 using Radar.Core.Sources;
@@ -162,11 +163,25 @@ public partial class MainWindow : Window
             .ToList();
 
         var filters = new List<SourceFilter> { SourceFilter.All(_allRows) };
-        filters.AddRange(sources.Select(s => SourceFilter.For(s, _allRows)));
+        foreach (var group in SourceGrouping.GroupByType(sources))
+        {
+            var groupName = GroupLabel(group.SourceType);
+            filters.AddRange(group.Sources.Select(s => SourceFilter.For(s, _allRows, groupName)));
+        }
 
         SourcesList.ItemsSource = filters;
+        // ItemsSource is a new list every reload, so its default view needs the grouping re-applied each time.
+        CollectionViewSource.GetDefaultView(filters).GroupDescriptions.Add(new PropertyGroupDescription(nameof(SourceFilter.GroupName)));
         SourcesList.SelectedItem = filters.FirstOrDefault(f => f.SourceId == selectedSourceId) ?? filters[0];
     }
+
+    /// <summary>Spanish sidebar label for a source group. Presentation-only; the grouping itself is Core logic.</summary>
+    private static string GroupLabel(SourceType sourceType) => sourceType switch
+    {
+        SourceType.GitHub => "Repositorios",
+        SourceType.YouTube => "Canales",
+        _ => sourceType.ToString(),
+    };
 
     /// <summary>Shows the current page of the selected source's items in the selected period.</summary>
     private void NotifyNewVideos(IReadOnlyList<(ContentItem Item, Source Source)> videos)
@@ -346,19 +361,27 @@ public partial class MainWindow : Window
             utc.ToLocalTime().ToString("MMM d, yyyy", CultureInfo.InvariantCulture);
     }
 
-    /// <summary>An entry of the sources sidebar. SourceId is null for "All sources".</summary>
-    private sealed record SourceFilter(long? SourceId, string Name, string Detail, int Unread)
+    /// <summary>
+    /// An entry of the sources sidebar. <see cref="SourceId"/> is null for "Novedades" (all sources);
+    /// <see cref="GroupName"/> is empty for it too, so it renders above the "Repositorios"/"Canales" groups without a header.
+    /// </summary>
+    private sealed record SourceFilter(long? SourceId, string Name, int Unread, string GroupName, bool IsPaused)
     {
+        public bool IsAllFilter => SourceId is null;
+
         public string UnreadText => Unread > 0 ? Unread.ToString(CultureInfo.InvariantCulture) : "";
 
-        public static SourceFilter All(IReadOnlyList<ContentItemRow> rows) =>
-            new(null, "All sources", $"{rows.Count} items", rows.Count(r => !r.IsRead));
+        public bool ShowUnreadDot => !IsAllFilter && Unread > 0;
 
-        public static SourceFilter For(Source source, IReadOnlyList<ContentItemRow> rows)
+        public string DisplayName => IsPaused ? $"{Name} · pausada" : Name;
+
+        public static SourceFilter All(IReadOnlyList<ContentItemRow> rows) =>
+            new(null, "Novedades", rows.Count(r => !r.IsRead), GroupName: "", IsPaused: false);
+
+        public static SourceFilter For(Source source, IReadOnlyList<ContentItemRow> rows, string groupName)
         {
             var sourceRows = rows.Where(r => r.Item.SourceId == source.Id).ToList();
-            var detail = source.IsActive ? source.SourceType.ToString() : $"{source.SourceType} · paused";
-            return new(source.Id, source.DisplayName, detail, sourceRows.Count(r => !r.IsRead));
+            return new(source.Id, source.DisplayName, sourceRows.Count(r => !r.IsRead), groupName, IsPaused: !source.IsActive);
         }
     }
 }
