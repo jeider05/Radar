@@ -42,6 +42,8 @@ Cierra y vuelve a abrir la terminal o Visual Studio para que Radar la lea. `.env
 | `GEMINI_API_KEY` | Clave de la API de Gemini. Sin ella, Radar sigue funcionando pero no genera explicaciones ni resúmenes con IA |
 | `GEMINI_MODEL` | Modelo de Gemini a usar. Opcional, por defecto `gemini-3.8-flash` |
 | `RADAR_PROMPTS_DIR` | Carpeta donde buscar los prompts (`.prompt.md`/`.schema.json`). Opcional, por defecto la carpeta `Prompts` junto al ejecutable |
+| `RADAR_USER_OS` | Sistema operativo a usar en los comandos de instalación de la ficha de versión. Opcional, por defecto se detecta solo |
+| `RADAR_USER_SHELL` | Shell a usar en los comandos de instalación de la ficha de versión. Opcional, por defecto se detecta solo |
 
 ### Prompts como archivos
 
@@ -59,8 +61,13 @@ El Worker resume en 1-3 frases cada release o video nuevo con Gemini y guarda el
 | `MaxAgeDays` | No resume novedades más antiguas que esto |
 | `OnlyUnread` | Si es `true`, solo resume novedades no leídas |
 | `DailyDigestMinInterval` | Mínimo tiempo entre dos digests diarios de la misma fecha |
+| `MaxDetailsPerCycle` | Máximo de fichas de detalle (ver "Detalle de una novedad") generadas por ciclo, para cuidar la cuota de Gemini |
 
 Sin `GEMINI_API_KEY`, este monitor no hace nada (deja un aviso una sola vez en el log) y el resto del Worker sigue funcionando igual.
+
+### Detalle de una novedad
+
+Al abrir **Detalles** sobre un release, Radar muestra una ficha generada con Gemini: resumen, si te afecta, qué cambió, comandos de instalación y un plan de uso, agrupados a partir de las notas originales del release. El Worker genera estas fichas en segundo plano (acotado por `MaxDetailsPerCycle`); si todavía no existe una al abrir el detalle, se pide una sola vez en el momento. Sin `GEMINI_API_KEY` o si la generación falla, el detalle muestra igual el título, los metadatos y las notas originales, con un aviso de por qué no hay ficha. Los videos muestran una versión más simple del mismo detalle (resumen, enlace a YouTube y la descripción original).
 
 ## Datos locales
 

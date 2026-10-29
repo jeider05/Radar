@@ -1,12 +1,9 @@
-using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Radar.Core.Contents;
 using Radar.Core.Learning;
-using Radar.Infrastructure.Prompts;
 
 namespace Radar.Infrastructure.Gemini;
 
@@ -16,7 +13,7 @@ public sealed class GeminiApiException(string message, HttpStatusCode? statusCod
 }
 
 /// <summary>
-/// Generates Spanish explanations of release notes and grounded study questions with the Gemini API (generateContent).
+/// Generates grounded study questions and arbitrary structured JSON with the Gemini API (generateContent).
 /// See https://ai.google.dev/gemini-api/docs/generate-content/text-generation.
 /// </summary>
 public sealed class GeminiClient(HttpClient httpClient, string apiKey, string model)
@@ -25,13 +22,7 @@ public sealed class GeminiClient(HttpClient httpClient, string apiKey, string mo
     public const string ModelVariable = "GEMINI_MODEL";
     public const string DefaultModel = "gemini-3.8-flash";
 
-    /// <summary>Longer release notes are truncated to keep requests (and cost) bounded.</summary>
-    public const int MaxNotesLength = 20_000;
-
     private const string ApiBaseUrl = "https://generativelanguage.googleapis.com/v1beta/models";
-
-    private static readonly IPromptProvider Prompts = new PromptLibrary();
-    private static readonly Lazy<PromptDefinition> ReleaseExplanationPrompt = new(() => Prompts.Load("Detalle/release-explanation"));
 
     private const string StudyQuestionsInstruction = """
         Eres un profesor que prepara preguntas de examen en español sobre Gentle AI.
@@ -64,18 +55,6 @@ public sealed class GeminiClient(HttpClient httpClient, string apiKey, string mo
 
         var model = getVariable(ModelVariable);
         return new GeminiClient(httpClient, apiKey.Trim(), string.IsNullOrWhiteSpace(model) ? DefaultModel : model.Trim());
-    }
-
-    /// <summary>Explains the release notes of <paramref name="release"/> in Spanish. Releases without notes are rejected without a request.</summary>
-    public async Task<string> ExplainReleaseAsync(string sourceName, ContentItem release, CancellationToken cancellationToken = default)
-    {
-        if (string.IsNullOrWhiteSpace(release.Description))
-        {
-            throw new GeminiApiException("This release has no notes to explain.");
-        }
-
-        var prompt = ReleaseExplanationPrompt.Value;
-        return await GenerateAsync(prompt.System, BuildPrompt(prompt, sourceName, release), null, "an explanation", cancellationToken);
     }
 
     /// <summary>
@@ -205,30 +184,6 @@ public sealed class GeminiClient(HttpClient httpClient, string apiKey, string mo
         && q.CorrectOption is { } correct && correct >= 0 && correct < options.Count
             ? new StudyQuestion(0, topicId, kind, difficulty, q.Prompt.Trim(), options.Select(o => o.Trim()).ToList(), correct, q.Explanation.Trim(), $"Gemini {Model}")
             : null;
-
-    private static string BuildPrompt(PromptDefinition prompt, string sourceName, ContentItem release)
-    {
-        var notes = release.Description!.Trim();
-        var truncated = notes.Length > MaxNotesLength;
-        if (truncated)
-        {
-            notes = notes[..MaxNotesLength];
-        }
-
-        var variables = new Dictionary<string, string>
-        {
-            ["projectName"] = sourceName,
-            ["title"] = release.Title,
-            ["publishedAt"] = release.PublishedAtUtc?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) ?? "desconocido",
-            ["url"] = release.Url,
-            ["notes"] = notes,
-        };
-
-        var rendered = Prompts.Render(prompt.UserTemplate, variables);
-        return truncated
-            ? $"{rendered}\n(Las notas están truncadas por su longitud; explica solo la parte incluida.)"
-            : rendered;
-    }
 
     private static GeminiApiException CreateError(HttpStatusCode status) => new(status switch
     {

@@ -7,7 +7,7 @@
     <ProjectReference Include="..\Radar.Worker\Radar.Worker.csproj" ReferenceOutputAssembly="false" Private="false" />
   </ItemGroup>
 
-  <!-- ReleaseDetailsWindow calls GeminiClient directly in this process, so it needs its own copy of the prompts too. -->
+  <!-- ReleaseDetailView generates fichas in this process via ReleaseDetailGenerator, so it needs its own copy of the prompts too. -->
   <ItemGroup>
     <None Include="..\Radar.Infrastructure\Prompts\**\*.prompt.md;..\Radar.Infrastructure\Prompts\**\*.schema.json">
       <Link>Prompts\%(RecursiveDir)%(Filename)%(Extension)</Link>
