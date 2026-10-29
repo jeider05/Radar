@@ -1,0 +1,53 @@
+{
+  "type": "OBJECT",
+  "properties": {
+    "resumen": { "type": "STRING" },
+    "teAfecta": {
+      "type": "OBJECT",
+      "properties": {
+        "nivel": { "type": "STRING", "enum": ["si", "opcional", "no"] },
+        "texto": { "type": "STRING" }
+      },
+      "required": ["nivel", "texto"]
+    },
+    "cambios": {
+      "type": "ARRAY",
+      "items": {
+        "type": "OBJECT",
+        "properties": {
+          "tipo": { "type": "STRING", "enum": ["nuevo", "cambio", "arreglo", "importante"] },
+          "texto": { "type": "STRING" }
+        },
+        "required": ["tipo", "texto"]
+      }
+    },
+    "instalacion": {
+      "type": "ARRAY",
+      "items": {
+        "type": "OBJECT",
+        "properties": {
+          "comando": { "type": "STRING" },
+          "opcional": { "type": "BOOLEAN" },
+          "deducido": { "type": "BOOLEAN" }
+        },
+        "required": ["comando", "opcional", "deducido"]
+      }
+    },
+    "planDeUso": {
+      "type": "ARRAY",
+      "items": { "type": "STRING" }
+    },
+    "versiones": {
+      "type": "ARRAY",
+      "items": {
+        "type": "OBJECT",
+        "properties": {
+          "etiqueta": { "type": "STRING" },
+          "valor": { "type": "STRING" }
+        },
+        "required": ["etiqueta", "valor"]
+      }
+    }
+  },
+  "required": ["resumen", "teAfecta", "cambios", "instalacion", "planDeUso", "versiones"]
+}

@@ -153,6 +153,32 @@ public sealed class PromptLibraryTests : IDisposable
     }
 
     [Fact]
+    public void The_release_detail_prompt_loads_with_its_variables_and_schema()
+    {
+        var library = new PromptLibrary();
+
+        var prompt = library.Load("Detalle/release-detail");
+        var rendered = library.Render(prompt.UserTemplate, new Dictionary<string, string>
+        {
+            ["projectName"] = "org/repo",
+            ["title"] = "v1.0.0",
+            ["publishedAt"] = "2026-10-27",
+            ["url"] = "https://example.invalid",
+            ["userOs"] = "Windows",
+            ["userShell"] = "PowerShell",
+            ["notes"] = "Notas del release.",
+        });
+        var schema = library.LoadSchema("Detalle/release-detail");
+
+        Assert.True(prompt.Version >= 1);
+        Assert.Contains("JSON", prompt.System);
+        Assert.Contains("Windows", rendered);
+        Assert.Contains("PowerShell", rendered);
+        Assert.Equal("OBJECT", schema.GetProperty("type").GetString());
+        Assert.True(schema.GetProperty("properties").TryGetProperty("resumen", out _));
+    }
+
+    [Fact]
     public void The_moved_release_explanation_prompt_matches_the_original_system_instruction()
     {
         const string originalSystemInstruction = """

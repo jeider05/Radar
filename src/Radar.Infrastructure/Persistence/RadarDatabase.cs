@@ -129,6 +129,20 @@ public sealed class RadarDatabase
             CreatedAtUtc TEXT NOT NULL
         );
         """,
+
+        // 6: Release detail "ficha" (embedded detail view). One row per content item; separate from
+        // ContentSummaries because that table already has one row per item for the short list summary.
+        """
+        CREATE TABLE ContentDetails (
+            ContentItemId INTEGER PRIMARY KEY REFERENCES ContentItems (Id),
+            Json          TEXT    NULL,
+            PromptVersion INTEGER NOT NULL,
+            Model         TEXT    NOT NULL,
+            Status        TEXT    NOT NULL,
+            Error         TEXT    NULL,
+            CreatedAtUtc  TEXT    NOT NULL
+        );
+        """,
     ];
 
     private readonly string _connectionString;
