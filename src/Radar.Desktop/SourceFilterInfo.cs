@@ -17,8 +17,6 @@ public sealed record SourceFilterInfo(long? SourceId, string Name, int Unread, s
 
     public string UnreadText => Unread > 0 ? Unread.ToString(CultureInfo.InvariantCulture) : "";
 
-    public bool ShowUnreadDot => !IsAllFilter && Unread > 0;
-
     public string DisplayName => IsPaused ? $"{Name} · pausada" : Name;
 
     public static SourceFilterInfo All(IReadOnlyList<NewsItem> rows) =>

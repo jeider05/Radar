@@ -83,13 +83,14 @@
                                         <TextBlock x:Name="NameText" Grid.Column="0" Text="{Binding DisplayName}"
                                                    VerticalAlignment="Center" Foreground="{DynamicResource TextBrush}"
                                                    TextTrimming="CharacterEllipsis" />
-                                        <Ellipse Grid.Column="1" Width="6" Height="6" Fill="{DynamicResource AccentBrush}"
-                                                 VerticalAlignment="Center" Margin="8,0,2,0"
-                                                 Visibility="{Binding ShowUnreadDot, Converter={StaticResource BoolToVisibilityConverter}}" />
+                                        <TextBlock x:Name="UnreadCountText" Grid.Column="1" Text="{Binding UnreadText}"
+                                                   VerticalAlignment="Center" Margin="8,0,2,0" FontSize="12"
+                                                   FontWeight="SemiBold" Foreground="{DynamicResource AccentTextBrush}" />
                                     </Grid>
                                     <DataTemplate.Triggers>
                                         <DataTrigger Binding="{Binding IsPaused}" Value="True">
                                             <Setter TargetName="NameText" Property="Foreground" Value="{DynamicResource MutedTextBrush}" />
+                                            <Setter TargetName="UnreadCountText" Property="Foreground" Value="{DynamicResource MutedTextBrush}" />
                                         </DataTrigger>
                                     </DataTemplate.Triggers>
                                 </DataTemplate>
