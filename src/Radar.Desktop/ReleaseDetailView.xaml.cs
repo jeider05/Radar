@@ -30,6 +30,20 @@ public partial class ReleaseDetailView : UserControl
         _goBack = goBack;
     }
 
+    // Below this width the aside moves under the main column instead of squeezing it.
+    private const double TwoColumnMinWidth = 860;
+
+    private void BodyGrid_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        bool twoColumns = e.NewSize.Width >= TwoColumnMinWidth;
+        AsideColumn.Width = twoColumns ? new GridLength(260) : new GridLength(0);
+        Grid.SetColumn(AsidePanel, twoColumns ? 1 : 0);
+        Grid.SetRow(AsidePanel, twoColumns ? 0 : 1);
+        AsidePanel.HorizontalAlignment = twoColumns ? HorizontalAlignment.Stretch : HorizontalAlignment.Left;
+        AsidePanel.Width = twoColumns ? double.NaN : Math.Min(360, e.NewSize.Width);
+        MainColumn.Margin = twoColumns ? new Thickness(0, 0, 56, 0) : new Thickness(0, 0, 0, 28);
+    }
+
     /// <summary>Shows an item's detail. Opening a detail never marks it as read.</summary>
     public async Task ShowAsync(NewsItemView item)
     {
