@@ -11,7 +11,7 @@ using Radar.Infrastructure.YouTube;
 namespace Radar.Desktop;
 
 /// <summary>
-/// "My sources": add GitHub repositories or YouTube channels, pause or resume them, and remove sources that have no content.
+/// "My sources": add GitHub repositories or YouTube channels, pause or resume them, and remove sources (and all their data, after a warning).
 /// GitHub sources are only written to SQLite. YouTube links are looked up once on YouTube to get the channel id and name.
 /// The Worker checks new and resumed sources and fetches their releases or videos.
 /// </summary>
@@ -201,8 +201,15 @@ public partial class SourcesWindow : Window
             return;
         }
 
-        var confirm = MessageBox.Show(this, $"Remove {row.Name} from your sources?", "Remove source",
-            MessageBoxButton.OKCancel, MessageBoxImage.Question, MessageBoxResult.Cancel);
+        var question = row.ItemCount == 0
+            ? $"Remove {row.Name} from your sources?"
+            : $"Remove {row.Name} from your sources?\n\n" +
+              $"All its data will be permanently deleted too: {row.ItemCount.ToString(CultureInfo.InvariantCulture)} items, " +
+              "with their read status and AI summaries. This cannot be undone.\n\n" +
+              "To stop following it but keep its history, pause it instead.";
+        var confirm = MessageBox.Show(this, question, "Remove source",
+            MessageBoxButton.OKCancel, row.ItemCount == 0 ? MessageBoxImage.Question : MessageBoxImage.Warning,
+            MessageBoxResult.Cancel);
         if (confirm != MessageBoxResult.OK)
         {
             return;
@@ -210,20 +217,8 @@ public partial class SourcesWindow : Window
 
         try
         {
-            var result = await Task.Run(() => _sources.TryDelete(row.Source.Id));
-            switch (result)
-            {
-                case SourceDeleteResult.Deleted:
-                    ShowMessage($"Removed {row.Name}.", isError: false);
-                    break;
-                case SourceDeleteResult.HasContent:
-                    // The Worker found content after this list was loaded.
-                    ShowMessage($"{row.Name} now has content, so it was kept. Pause it instead.", isError: true);
-                    break;
-                case SourceDeleteResult.NotFound:
-                    ShowMessage($"{row.Name} was already removed.", isError: false);
-                    break;
-            }
+            var deleted = await Task.Run(() => _sources.Delete(row.Source.Id));
+            ShowMessage(deleted ? $"Removed {row.Name} and its data." : $"{row.Name} was already removed.", isError: false);
         }
         catch (Exception ex)
         {
@@ -250,10 +245,8 @@ public partial class SourcesWindow : Window
 
         public string ToggleText => Source.IsActive ? "Pause" : "Resume";
 
-        public bool CanRemove => ItemCount == 0;
-
-        public string RemoveToolTip => CanRemove
+        public string RemoveToolTip => ItemCount == 0
             ? "Remove this source."
-            : "This source has content. Pause it instead to keep its history.";
+            : "Remove this source and all its data. Pause it instead to keep its history.";
     }
 }

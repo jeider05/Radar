@@ -138,34 +138,77 @@ public sealed class SourceStoreTests : IDisposable
     }
 
     [Fact]
-    public void TryDelete_removes_a_source_without_content()
+    public void Delete_removes_a_source_without_content()
     {
         _database.Initialize();
         var source = _store.TryAdd(SourceType.GitHub, "example-org/example-repo", "Example repo", "https://github.com/example-org/example-repo")!;
 
-        Assert.Equal(SourceDeleteResult.Deleted, _store.TryDelete(source.Id));
+        Assert.True(_store.Delete(source.Id));
         Assert.Null(_store.Find(SourceType.GitHub, "example-org/example-repo"));
     }
 
     [Fact]
-    public void TryDelete_keeps_a_source_that_has_content_and_its_history()
+    public void Delete_removes_a_source_with_all_its_data_and_keeps_other_sources()
     {
         _database.Initialize();
         var source = _store.TryAdd(SourceType.GitHub, "example-org/example-repo", "Example repo", "https://github.com/example-org/example-repo")!;
+        var other = _store.TryAdd(SourceType.GitHub, "example-org/other-repo", "Other repo", "https://github.com/example-org/other-repo")!;
         var contentItems = new ContentItemStore(_database);
         contentItems.TryAdd(source.Id, "release-1", "Release 1", "https://example.invalid/release-1");
+        contentItems.TryAdd(other.Id, "release-1", "Release 1", "https://example.invalid/other/release-1");
+        foreach (var table in new[] { "ContentSummaries", "ContentDetails", "ContentExplanations" })
+        {
+            InsertDerivedRows(table);
+        }
 
-        Assert.Equal(SourceDeleteResult.HasContent, _store.TryDelete(source.Id));
-        Assert.NotNull(_store.Find(SourceType.GitHub, "example-org/example-repo"));
-        Assert.Single(contentItems.GetBySource(source.Id));
+        Assert.True(_store.Delete(source.Id));
+
+        Assert.Null(_store.Find(SourceType.GitHub, "example-org/example-repo"));
+        Assert.Empty(contentItems.GetBySource(source.Id));
+        Assert.Single(contentItems.GetBySource(other.Id));
+        foreach (var table in new[] { "ContentSummaries", "ContentDetails", "ContentExplanations" })
+        {
+            Assert.Equal(1L, CountRows(table));
+        }
     }
 
     [Fact]
-    public void TryDelete_returns_NotFound_when_source_does_not_exist()
+    public void Delete_returns_false_when_source_does_not_exist()
     {
         _database.Initialize();
 
-        Assert.Equal(SourceDeleteResult.NotFound, _store.TryDelete(999));
+        Assert.False(_store.Delete(999));
+    }
+
+    // Gives every content item one row in a derived table, filling only the columns that must not be null.
+    private void InsertDerivedRows(string table)
+    {
+        using var connection = _database.OpenConnection();
+        using var columns = connection.CreateCommand();
+        columns.CommandText = $"SELECT name, type FROM pragma_table_info('{table}') WHERE \"notnull\" = 1 AND name <> 'ContentItemId';";
+        var names = new List<string>();
+        var values = new List<string>();
+        using (var reader = columns.ExecuteReader())
+        {
+            while (reader.Read())
+            {
+                names.Add(reader.GetString(0));
+                values.Add(reader.GetString(1).Equals("INTEGER", StringComparison.OrdinalIgnoreCase) ? "1" : "'x'");
+            }
+        }
+
+        using var insert = connection.CreateCommand();
+        insert.CommandText = $"INSERT INTO {table} (ContentItemId, {string.Join(", ", names)}) " +
+                             $"SELECT Id, {string.Join(", ", values)} FROM ContentItems;";
+        insert.ExecuteNonQuery();
+    }
+
+    private long CountRows(string table)
+    {
+        using var connection = _database.OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = $"SELECT COUNT(*) FROM {table};";
+        return (long)command.ExecuteScalar()!;
     }
 
     private long CountSources()
